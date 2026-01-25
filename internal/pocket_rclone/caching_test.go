@@ -133,4 +133,91 @@ func TestBanquetCaching(t *testing.T) {
 	} else {
 		t.Logf("Cache regeneration verified. New Time: %v", modTime3)
 	}
+	// 4. Test Cache Key Conversion & Stability (Adhoc)
+	t.Run("AdhocCacheKeyStability", func(t *testing.T) {
+		// Mock app manually? We need to call handleBanquet.
+		// We'll reuse the setup but need to ensure 'handleBanquet' uses the logic we changed.
+		// We use a predefined remote 'local_cache_test' which we made in main test body.
+		// That remote has name="local_cache_test".
+		// We need to request a URL that parses to user=local_cache_test.
+
+		// URL 1: Standard
+		// /http:/local_cache_test@localhost/data.csv
+		req1 := httptest.NewRequest(http.MethodGet, "/http:/local_cache_test@localhost/data.csv", nil)
+		rec1 := httptest.NewRecorder()
+		e1 := &core.RequestEvent{App: testApp, Event: router.Event{Request: req1, Response: rec1}}
+
+		if err := handleBanquet(e1); err != nil {
+			t.Fatalf("Req1 failed: %v", err)
+		}
+
+		// Find the cache files generated
+		// We expect BOTH a .csv and a .db file
+		csvFiles1, _ := filepath.Glob(filepath.Join(cacheDir, "adhoc-*.csv"))
+		if len(csvFiles1) == 0 {
+			t.Fatal("No source .csv cache file generated for adhoc request")
+		}
+		dbFiles1, _ := filepath.Glob(filepath.Join(cacheDir, "adhoc-*.db"))
+		if len(dbFiles1) == 0 {
+			t.Fatal("No converted .db cache file generated for adhoc request")
+		}
+
+		cacheFileCSV := csvFiles1[0]
+		cacheFileDB := dbFiles1[0]
+
+		infoCSV1, _ := os.Stat(cacheFileCSV)
+		infoDB1, _ := os.Stat(cacheFileDB)
+
+		t.Logf("Generated Cache: %s and %s", filepath.Base(cacheFileCSV), filepath.Base(cacheFileDB))
+
+		// Wait a bit to ensure potential modifications would have new timestamps
+		time.Sleep(1 * time.Second)
+
+		// Reset
+		// We want to verify that a DIFFERENT url (scheme/query diff) reuses the SAME file
+		// AND does not trigger a re-download (modification).
+
+		// URL 2: Different Scheme, Added Query
+		// /https:/local_cache_test@localhost/data.csv?foo=bar&new=param
+		req2 := httptest.NewRequest(http.MethodGet, "/https:/local_cache_test@localhost/data.csv?foo=bar&new=param", nil)
+		rec2 := httptest.NewRecorder()
+		e2 := &core.RequestEvent{App: testApp, Event: router.Event{Request: req2, Response: rec2}}
+
+		if err := handleBanquet(e2); err != nil {
+			t.Fatalf("Req2 failed: %v", err)
+		}
+
+		// Check existence again
+		csvFiles2, _ := filepath.Glob(filepath.Join(cacheDir, "adhoc-*.csv"))
+		dbFiles2, _ := filepath.Glob(filepath.Join(cacheDir, "adhoc-*.db"))
+
+		if len(csvFiles2) != 1 || len(dbFiles2) != 1 {
+			t.Errorf("Cache file count mismatch. Expected 1 each. Got CSV: %d, DB: %d", len(csvFiles2), len(dbFiles2))
+		}
+
+		if csvFiles2[0] != cacheFileCSV {
+			t.Errorf("CSV Filename changed! OLD: %s, NEW: %s", cacheFileCSV, csvFiles2[0])
+		}
+		if dbFiles2[0] != cacheFileDB {
+			t.Errorf("DB Filename changed! OLD: %s, NEW: %s", cacheFileDB, dbFiles2[0])
+		}
+
+		// Verify ModTime (No re-download)
+		infoCSV2, _ := os.Stat(csvFiles2[0])
+		infoDB2, _ := os.Stat(dbFiles2[0])
+
+		if !infoCSV1.ModTime().Equal(infoCSV2.ModTime()) {
+			t.Error("Source CSV file was re-downloaded/modified! Timestamp changed.")
+		} else {
+			t.Log("Source CSV cache hit verified (Timestamp unchanged).")
+		}
+
+		if !infoDB1.ModTime().Equal(infoDB2.ModTime()) {
+			t.Error("DB file was re-converted/modified! Timestamp changed.")
+		} else {
+			t.Log("DB cache hit verified (Timestamp unchanged).")
+		}
+
+		t.Log("Cache key stability verified: Scheme and Query ignored.")
+	})
 }

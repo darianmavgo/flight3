@@ -475,8 +475,17 @@ func handleBanquet(e *core.RequestEvent) error {
 		if alias != "" {
 			remoteRecord, _ = app.FindFirstRecordByData("rclone_remotes", "name", alias)
 			if remoteRecord != nil {
-				// Use hash for cache key
-				hash := md5.Sum([]byte(reqURI))
+				// Use structured hash for cache key based on User, Host, and DataSetPath
+				// We want to ignore Scheme, Query, and potentially ColumnPath (if we support inside DB query later)
+				// Key = MD5(User + "@" + Host + ":" + DataSetPath)
+
+				rawUser := ""
+				if b.User != nil {
+					rawUser = b.User.String()
+				}
+				// Use the parsed b.DataSetPath which avoids column paths
+				baseKey := fmt.Sprintf("%s@%s:%s", rawUser, b.Host, b.DataSetPath)
+				hash := md5.Sum([]byte(baseKey))
 				cacheKey = "adhoc-" + hex.EncodeToString(hash[:])
 
 				// If it's an S3 remote and we have host/scheme, inject endpoint
@@ -618,51 +627,41 @@ func ensurePipelineCache(app core.App, cacheKey string, remote *core.Record, rem
 	}
 	dbPath := filepath.Join(cacheDir, cacheKey+".db")
 
-	// Check TTL
-	info, err := os.Stat(dbPath)
-	cacheValid := false
+	// 4. MkSQLite Conversion
+	// Determine paths
+	ext := filepath.Ext(remotePath)
+	if ext == "" {
+		ext = ".csv" // Default fallback
+	}
+	sourcePath := filepath.Join(cacheDir, cacheKey+ext)
+
+	// A. Ensure Source File Exists
+	sourceInfo, err := os.Stat(sourcePath)
+	sourceValid := false
 	if err == nil {
-		// Check age
-		if ttl <= 0 {
-			ttl = 60 // Default 60 mins
-		}
-		if time.Since(info.ModTime()).Minutes() < ttl {
-			cacheValid = true
+		if time.Since(sourceInfo.ModTime()).Minutes() < ttl {
+			sourceValid = true
 		}
 	}
 
-	if cacheValid {
-		return dbPath, nil
-	}
-
-	// Regenerate
-	log.Printf("Regenerating cache for key %s (path: %s)", cacheKey, remotePath)
-
-	// 1. Get Remote Info (Already passed)
-	if remote == nil {
-		return "", fmt.Errorf("remote not found")
-	}
-
+	// Re-fetch Remote Info needed for download
 	// We don't have mksqliteConfig in direct requests yet, using defaults
 	var mksqliteConfig *core.Record
 	// TODO: Support finding config by some heuristic if needed
 
-	// 2. Connect Rclone
+	// Connect Rclone
 	remoteType := remote.GetString("type")
 
 	configMap := map[string]interface{}{}
 	rawConfig := remote.Get("config")
-	// Handle types.JSONRaw or string
 	if b, ok := rawConfig.(types.JSONRaw); ok {
 		_ = json.Unmarshal(b, &configMap)
 	} else if s, ok := rawConfig.(string); ok {
 		_ = json.Unmarshal([]byte(s), &configMap)
 	} else {
-		// Fallback to cast for maps
 		configMap = cast.ToStringMap(rawConfig)
 	}
 
-	// Build connection string (Reuse logic from handleBrowse if possible, but copy ok for now)
 	var rootPath string
 	if v, ok := configMap["root"]; ok {
 		rootPath = fmt.Sprintf("%v", v)
@@ -680,40 +679,68 @@ func ensurePipelineCache(app core.App, cacheKey string, remote *core.Record, rem
 	}
 	connStr := sb.String()
 
-	// 3. Open File
-	// fs.NewFs expects remote:path
-	// If path is a file, we usually pass remote:dir and then Open(filename).
-	// But rclone API allows opening directly if supported? No, usually NewFs is root.
-	// We'll treat the connection string as root.
-	// And append remotePath? No.
-	// Let's assume connection string is Root.
-	// remotePath is path relative to Root.
+	if !sourceValid {
+		log.Printf("Downloading source to cache: %s", sourcePath)
 
-	// Logic:
-	// If remotePath is full path to file "folder/file.csv"
-	// We NewFs(connStr) -> Root
-	// Then f.NewObject(remotePath) -> Open
+		fSys, err := rcfs.NewFs(context.Background(), connStr+":"+rootPath)
+		if err != nil {
+			return "", fmt.Errorf("fs new failed: %v", err)
+		}
 
-	// If rootPath was provided, append it to connection string
-	fSys, err := rcfs.NewFs(context.Background(), connStr+":"+rootPath)
-	if err != nil {
-		return "", fmt.Errorf("fs new failed: %v", err)
+		obj, err := fSys.NewObject(context.Background(), remotePath)
+		if err != nil {
+			return "", fmt.Errorf("file not found: %v", err)
+		}
+
+		rcReader, err := obj.Open(context.Background())
+		if err != nil {
+			return "", fmt.Errorf("open file failed: %v", err)
+		}
+		defer rcReader.Close()
+
+		// Stream to temp file then rename
+		tmpSourcePath := sourcePath + ".tmp"
+		localFile, err := os.Create(tmpSourcePath)
+		if err != nil {
+			return "", err
+		}
+
+		if _, err := io.Copy(localFile, rcReader); err != nil {
+			localFile.Close()
+			os.Remove(tmpSourcePath)
+			return "", fmt.Errorf("download failed: %v", err)
+		}
+		localFile.Close()
+
+		if err := os.Rename(tmpSourcePath, sourcePath); err != nil {
+			return "", err
+		}
 	}
 
-	// Check if file exists and open it
-	obj, err := fSys.NewObject(context.Background(), remotePath)
-	if err != nil {
-		return "", fmt.Errorf("file not found: %v", err)
+	// B. Ensure DB Exists
+	// We check DB validity relative to source? Or just same TTL?
+	// If source was re-downloaded, we must re-convert.
+	// If source was valid, but DB missing/old, re-convert.
+	// Simplest: Check DB TTL. If expired or missing, convert from source.
+
+	dbInfo, err := os.Stat(dbPath)
+	dbValid := false
+	if err == nil {
+		if time.Since(dbInfo.ModTime()).Minutes() < ttl {
+			dbValid = true
+		}
 	}
 
-	rcReader, err := obj.Open(context.Background())
-	if err != nil {
-		return "", fmt.Errorf("open file failed: %v", err)
-	}
-	defer rcReader.Close()
+	// If source was just updated (implied if sourceValid was false initially, but we didn't track that bool across the block perfectly without refactor)
+	// Actually, if we just downloaded source, standard TTL check on DB (which likely doesn't exist or is old) will trigger conversion.
 
-	// 4. MkSQLite Conversion
-	// mksqliteConfig is already populated
+	if dbValid {
+		return dbPath, nil
+	}
+
+	log.Printf("Converting local source to DB: %s -> %s", sourcePath, dbPath)
+
+	// mksqliteConfig handling
 	driver := ""
 	args := map[string]interface{}{}
 	if mksqliteConfig != nil {
@@ -723,10 +750,10 @@ func ensurePipelineCache(app core.App, cacheKey string, remote *core.Record, rem
 		}
 	}
 
-	// Auto-detect driver if empty (by extension)
+	// Auto-detect driver
 	if driver == "" {
-		ext := strings.ToLower(filepath.Ext(remotePath))
-		driver = strings.TrimPrefix(ext, ".")
+		drvExt := strings.ToLower(filepath.Ext(sourcePath))
+		driver = strings.TrimPrefix(drvExt, ".")
 	}
 
 	// Build Conversion Config
@@ -743,19 +770,24 @@ func ensurePipelineCache(app core.App, cacheKey string, remote *core.Record, rem
 		convCfg.Verbose = val
 	}
 
-	provider, err := converters.Open(driver, rcReader, convCfg)
+	// Open Local Source File
+	srcFile, err := os.Open(sourcePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open cached source: %v", err)
+	}
+	defer srcFile.Close()
+
+	provider, err := converters.Open(driver, srcFile, convCfg)
 	if err != nil {
 		return "", fmt.Errorf("converter open failed (%s): %v", driver, err)
 	}
 
-	// Create temp or direct file
-	// We'll write to a temp file then rename (atomic)
+	// Create temp DB file
 	tmpDbPath := dbPath + ".tmp"
 	outFile, err := os.Create(tmpDbPath)
 	if err != nil {
 		return "", err
 	}
-	// defer cleanup if fail?
 
 	err = converters.ImportToSQLite(provider, outFile, &converters.ImportOptions{Verbose: true})
 	outFile.Close()
@@ -765,7 +797,6 @@ func ensurePipelineCache(app core.App, cacheKey string, remote *core.Record, rem
 		return "", fmt.Errorf("import failed: %v", err)
 	}
 
-	// Rename to final
 	if err := os.Rename(tmpDbPath, dbPath); err != nil {
 		return "", err
 	}
