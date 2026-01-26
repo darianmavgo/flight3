@@ -1,17 +1,14 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/md5"
 	"database/sql"
-	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
-	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -29,6 +26,7 @@ import (
 	"os"
 
 	"github.com/darianmavgo/banquet"
+	"github.com/darianmavgo/flight3/internal/controller"
 	"github.com/darianmavgo/mksqlite/converters"
 	_ "github.com/darianmavgo/mksqlite/converters/all"
 	"github.com/darianmavgo/mksqlite/converters/common"
@@ -38,12 +36,8 @@ import (
 	_ "github.com/rclone/rclone/backend/all" // Import all backends
 	rcfs "github.com/rclone/rclone/fs"
 
-	"github.com/darianmavgo/flight3/internal/secrets"
 	_ "github.com/mattn/go-sqlite3"
 )
-
-//go:embed ui/*
-var uiEmbed embed.FS
 
 func main() {
 	// Default to "serve" command if no arguments are provided
@@ -93,22 +87,19 @@ func main() {
 		DefaultDataDir: dataDir,
 	})
 
-	// Initialize SQLiter
-	templatePath := "cmd/flight/templates"
-	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
-		// Try generic templates dir if cmd path fails
-		templatePath = "templates"
+	// Initialize SQLiter with Embedded Templates
+	// We use the templates embedded in the sqliter library.
+	tpl, err := sqliter.GetEmbeddedTemplates()
+	if err != nil {
+		log.Fatal("Failed to load embedded templates from sqliter:", err)
 	}
-	tpl := loadTemplates(templatePath)
+
+	// Initialize TableWriter with embedded templates
 	tw := sqliter.NewTableWriter(tpl, sqliter.DefaultConfig())
 
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
 		if err := ensureCollections(app); err != nil {
 			return fmt.Errorf("ensureCollections: %w", err)
-		}
-
-		if err := importUserSecrets(app, filepath.Dir(dataDir)); err != nil {
-			log.Printf("Warning: importUserSecrets failed: %v", err)
 		}
 
 		// Update 'local' remote path from app_settings
@@ -169,122 +160,21 @@ func main() {
 			}
 		}
 
-		// Middleware to invert Admin UI colors
-		e.Router.BindFunc(func(evt *core.RequestEvent) error {
-			if evt.Request.URL.Path == "/_/" || evt.Request.URL.Path == "/_/index.html" {
-				cw := &customWriter{ResponseWriter: evt.Response}
-				evt.Response = cw
-
-				err := evt.Next()
-
-				if cw.Buffer.Len() > 0 {
-					content := cw.Buffer.String()
-					// Simple inversion filter
-					style := `<style>html { filter: invert(1) hue-rotate(180deg); } img, video { filter: invert(1) hue-rotate(180deg); } .main-menu { background: #111 !important; }</style>`
-					// Inject before </head>
-					if strings.Contains(content, "</head>") {
-						modified := strings.Replace(content, "</head>", style+"</head>", 1)
-						cw.ResponseWriter.WriteHeader(cw.Status)
-						cw.ResponseWriter.Write([]byte(modified))
-					} else {
-						// Fallback if no head (unlikely)
-						cw.ResponseWriter.WriteHeader(cw.Status)
-						cw.ResponseWriter.Write(cw.Buffer.Bytes())
-					}
-				} else {
-					// Empty body? Just forward status
-					if cw.Status != 0 {
-						cw.ResponseWriter.WriteHeader(cw.Status)
-					}
-				}
-				return err
-			}
-			return evt.Next()
-		})
-
-		// Serve UI
-		subFS, err := fs.Sub(uiEmbed, "ui")
-		if err != nil {
-			return err
+		// Use Path Controller for all other routes
+		// We define the banquet handler closure to pass dependencies
+		banquetClosure := func(evt *core.RequestEvent) error {
+			return handleBanquet(evt, tw, tpl)
 		}
 
-		// Explicit Root Handler
-		e.Router.GET("/", func(evt *core.RequestEvent) error {
-			log.Printf("Serving local root explicit handler")
-			targetURI := "/https:/local@localhost/"
-			evt.Request.RequestURI = targetURI
-			evt.Request.URL.Path = targetURI
-			evt.Request.URL.RawPath = targetURI
-			return handleBanquet(evt, tw, tpl)
-		})
+		controller.BindRoutes(e, banquetClosure)
 
-		e.Router.GET("/*", func(evt *core.RequestEvent) error {
-			path := evt.Request.PathValue("*")
-
-			// If path is empty (Root), serve banquet list of 'serve_folder' via 'local' user directly
-			if path == "" || path == "/" || path == "index.html" {
-				log.Printf("Serving local root for path: '%s'", path)
-				// Internal Rewrite: Serve local root contents
-				targetURI := "/https:/local@localhost/"
-				evt.Request.RequestURI = targetURI
-				evt.Request.URL.Path = targetURI
-				evt.Request.URL.RawPath = targetURI
-				return handleBanquet(evt, tw, tpl)
-			}
-
-			// Fallback logic for static files
-			f, err := subFS.Open(path)
-			if err != nil {
-				// Try index.html if not found (SPA fallback-like)
-				path = "index.html"
-				f, err = subFS.Open(path)
-				if err != nil {
-					// If index.html also missing, return 404
-					return evt.Next()
-				}
-			}
-			defer f.Close()
-
-			info, err := f.Stat()
-			if err != nil {
-				return err
-			}
-
-			if info.IsDir() {
-				// Try index.html inside
-				index, err := subFS.Open(strings.TrimSuffix(path, "/") + "/index.html")
-				if err == nil {
-					defer index.Close()
-					f = index
-					info, _ = index.Stat()
-				}
-			}
-
-			seeker, ok := f.(io.ReadSeeker)
-			if !ok {
-				return nil
-			}
-
-			http.ServeContent(evt.Response, evt.Request, info.Name(), info.ModTime(), seeker)
-			return nil
-		})
-
-		// GET /api/rclone/browse/{id}?path=folder/subfolder
+		// Explicit API Routes (Registered before catch-all in BindRoutes? No, BindRoutes does wildcard.
+		// Wait, BindRoutes registers /* last.
+		// But in Go 1.22 explicit matches take precedence.
+		// So we can register API routes HERE or inside BindRoutes.
+		// Let's register them here for clarity.
 		e.Router.GET("/api/rclone/browse/{id}", func(evt *core.RequestEvent) error {
 			return handleBrowse(app, evt)
-		})
-
-		// GET /banquet/*
-		e.Router.GET("/banquet/*", func(evt *core.RequestEvent) error {
-			return handleBanquet(evt, tw, tpl)
-		})
-
-		// GET /http:/{any...} and /https:/{any...} (Direct Nested Banquet URLs)
-		e.Router.GET("/http:/{any...}", func(evt *core.RequestEvent) error {
-			return handleBanquet(evt, tw, tpl)
-		})
-		e.Router.GET("/https:/{any...}", func(evt *core.RequestEvent) error {
-			return handleBanquet(evt, tw, tpl)
 		})
 
 		return e.Next()
@@ -760,8 +650,6 @@ func handleBanquet(e *core.RequestEvent, tw *sqliter.TableWriter, tpl *template.
 
 			// Determine if link
 			colName := strings.ToLower(cols[i])
-			url := ""
-			// If column is path or name, and it looks like a path component (not empty)
 			if (colName == "path" || colName == "name") && valStr != "" {
 				// Construct link relative to current URL path
 				// We use string concat to assume standard banquet URL structure
@@ -769,16 +657,25 @@ func handleBanquet(e *core.RequestEvent, tw *sqliter.TableWriter, tpl *template.
 				if !strings.HasSuffix(base, "/") {
 					base += "/"
 				}
-				// Encode valStr? Browser handles some, but safer URL encoding might be needed?
-				// For now, raw concatenation as per user style preference (simple)
-				url = base + valStr
+				url := base + valStr
+				// Pre-render HTML since sqliter template use 'safe' filter
+				valStr = fmt.Sprintf(`<a href="%s">%s</a>`, url, valStr)
 			}
 
-			rowItems[i] = Cell{Text: valStr, Url: url}
+			rowItems[i] = valStr
 		}
 
 		// Use template directly to bypass sqliter []string restriction
-		if err := tpl.ExecuteTemplate(e.Response, "row.html", rowItems); err != nil {
+		// but using sqliter's expected data structure
+		data := struct {
+			Index int
+			Cells []interface{}
+		}{
+			Index: rowCounter,
+			Cells: rowItems, // rowItems is []interface{}, containing strings (pre-rendered HTML)
+		}
+
+		if err := tpl.ExecuteTemplate(e.Response, "row.html", data); err != nil {
 			log.Printf("Template exec error: %v (Defined: %v)", err, tpl.DefinedTemplates())
 		}
 		rowCounter++
@@ -1039,89 +936,4 @@ func ensurePipelineCache(app core.App, cacheKey string, remote *core.Record, rem
 	}
 
 	return dbPath, nil
-}
-
-func importUserSecrets(app core.App, baseDir string) error {
-	dbPath := filepath.Join(baseDir, "user_secrets.db")
-	keyPath := filepath.Join(filepath.Dir(baseDir), "key") // key is in root, user_secrets.db is in user_settings/
-
-	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		log.Printf("user_secrets.db not found at %s, skipping import", dbPath)
-		return nil
-	}
-	if _, err := os.Stat(keyPath); os.IsNotExist(err) {
-		log.Printf("key file not found at %s, skipping import", keyPath)
-		return nil
-	}
-
-	s, err := secrets.NewService(dbPath, keyPath)
-	if err != nil {
-		return fmt.Errorf("failed to initialize secrets service: %w", err)
-	}
-	defer s.Close()
-
-	aliases, err := s.ListAliases()
-	if err != nil {
-		return fmt.Errorf("failed to list aliases: %w", err)
-	}
-
-	collection, err := app.FindCollectionByNameOrId("rclone_remotes")
-	if err != nil {
-		return err
-	}
-
-	for _, alias := range aliases {
-		// Check if record already exists
-		existing, _ := app.FindFirstRecordByData("rclone_remotes", "name", alias)
-		if existing != nil {
-			continue
-		}
-
-		creds, err := s.GetCredentials(alias)
-		if err != nil {
-			log.Printf("Failed to get credentials for %s: %v", alias, err)
-			continue
-		}
-
-		record := core.NewRecord(collection)
-		record.Set("name", alias)
-
-		remoteType, ok := creds["type"].(string)
-		if !ok {
-			remoteType = "s3" // Default or skip?
-		}
-		record.Set("type", remoteType)
-
-		// Move all other fields to config
-		config := make(map[string]interface{})
-		for k, v := range creds {
-			if k == "type" {
-				continue
-			}
-			config[k] = v
-		}
-		record.Set("config", config)
-
-		if err := app.Save(record); err != nil {
-			log.Printf("Failed to save record for %s: %v", alias, err)
-		} else {
-			log.Printf("Imported credential: %s", alias)
-		}
-	}
-
-	return nil
-}
-
-type customWriter struct {
-	http.ResponseWriter
-	Buffer bytes.Buffer
-	Status int
-}
-
-func (w *customWriter) Write(b []byte) (int, error) {
-	return w.Buffer.Write(b)
-}
-
-func (w *customWriter) WriteHeader(statusCode int) {
-	w.Status = statusCode
 }
