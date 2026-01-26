@@ -80,7 +80,7 @@ func TestBanquetCaching(t *testing.T) {
 		tpl := getMockTemplate()
 		tw := sqliter.NewTableWriter(tpl, sqliter.DefaultConfig())
 
-		if err := handleBanquet(e, tw); err != nil {
+		if err := handleBanquet(e, tw, tpl); err != nil {
 			t.Fatalf("handleBanquet failed: %v", err)
 		}
 		if rec.Code != 200 {
@@ -157,7 +157,7 @@ func TestBanquetCaching(t *testing.T) {
 		tpl := getMockTemplate()
 		tw := sqliter.NewTableWriter(tpl, sqliter.DefaultConfig())
 
-		if err := handleBanquet(e1, tw); err != nil {
+		if err := handleBanquet(e1, tw, tpl); err != nil {
 			t.Fatalf("Req1 failed: %v", err)
 		}
 
@@ -197,7 +197,7 @@ func TestBanquetCaching(t *testing.T) {
 		tpl = getMockTemplate()
 		tw = sqliter.NewTableWriter(tpl, sqliter.DefaultConfig())
 
-		if err := handleBanquet(e2, tw); err != nil {
+		if err := handleBanquet(e2, tw, tpl); err != nil {
 			t.Fatalf("Req2 failed: %v", err)
 		}
 

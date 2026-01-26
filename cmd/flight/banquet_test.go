@@ -117,7 +117,7 @@ func TestHandleBanquet(t *testing.T) {
 	tpl := getMockTemplate()
 	tw := sqliter.NewTableWriter(tpl, sqliter.DefaultConfig())
 
-	if err := handleBanquet(e, tw); err != nil {
+	if err := handleBanquet(e, tw, tpl); err != nil {
 		t.Fatalf("handleBanquet failed: %v", err)
 	}
 
@@ -211,7 +211,7 @@ func TestBanquetDirectoryListing(t *testing.T) {
 
 	// This is expected to FAIL currently (likely 500 or 404 or empty)
 	// We want to assert what *should* happen (200 OK with listing)
-	err = handleBanquet(e, tw)
+	err = handleBanquet(e, tw, tpl)
 
 	// Logging result for debugging during TDD
 	t.Logf("Status: %d", rec.Code)

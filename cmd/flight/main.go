@@ -208,6 +208,16 @@ func main() {
 			return err
 		}
 
+		// Explicit Root Handler
+		e.Router.GET("/", func(evt *core.RequestEvent) error {
+			log.Printf("Serving local root explicit handler")
+			targetURI := "/https:/local@localhost/"
+			evt.Request.RequestURI = targetURI
+			evt.Request.URL.Path = targetURI
+			evt.Request.URL.RawPath = targetURI
+			return handleBanquet(evt, tw, tpl)
+		})
+
 		e.Router.GET("/*", func(evt *core.RequestEvent) error {
 			path := evt.Request.PathValue("*")
 
@@ -219,7 +229,7 @@ func main() {
 				evt.Request.RequestURI = targetURI
 				evt.Request.URL.Path = targetURI
 				evt.Request.URL.RawPath = targetURI
-				return handleBanquet(evt, tw)
+				return handleBanquet(evt, tw, tpl)
 			}
 
 			// Fallback logic for static files
@@ -266,15 +276,15 @@ func main() {
 
 		// GET /banquet/*
 		e.Router.GET("/banquet/*", func(evt *core.RequestEvent) error {
-			return handleBanquet(evt, tw)
+			return handleBanquet(evt, tw, tpl)
 		})
 
 		// GET /http:/{any...} and /https:/{any...} (Direct Nested Banquet URLs)
 		e.Router.GET("/http:/{any...}", func(evt *core.RequestEvent) error {
-			return handleBanquet(evt, tw)
+			return handleBanquet(evt, tw, tpl)
 		})
 		e.Router.GET("/https:/{any...}", func(evt *core.RequestEvent) error {
-			return handleBanquet(evt, tw)
+			return handleBanquet(evt, tw, tpl)
 		})
 
 		return e.Next()
@@ -474,7 +484,7 @@ func handleBrowse(app core.App, e *core.RequestEvent) error {
 	return e.JSON(http.StatusOK, results)
 }
 
-func handleBanquet(e *core.RequestEvent, tw *sqliter.TableWriter) error {
+func handleBanquet(e *core.RequestEvent, tw *sqliter.TableWriter, tpl *template.Template) error {
 	app := e.App
 	// 1. Parse Banquet URL
 	// We want the raw RequestURI to capture everything.
@@ -721,6 +731,12 @@ func handleBanquet(e *core.RequestEvent, tw *sqliter.TableWriter) error {
 	columnPointers := make([]interface{}, len(cols))
 	rowCounter := 0
 
+	// Cell used for template rendering
+	type Cell struct {
+		Text string
+		Url  string
+	}
+
 	for rows.Next() {
 		columns := make([]interface{}, len(cols))
 		for i := range columns {
@@ -732,17 +748,39 @@ func handleBanquet(e *core.RequestEvent, tw *sqliter.TableWriter) error {
 			continue
 		}
 
-		// Convert to strings for simple rendering
-		strRow := make([]string, len(cols))
+		// Convert to Cell structs
+		rowItems := make([]interface{}, len(cols))
 		for i, val := range columns {
+			valStr := ""
 			if b, ok := val.([]byte); ok {
-				strRow[i] = string(b)
+				valStr = string(b)
 			} else {
-				strRow[i] = fmt.Sprintf("%v", val)
+				valStr = fmt.Sprintf("%v", val)
 			}
+
+			// Determine if link
+			colName := strings.ToLower(cols[i])
+			url := ""
+			// If column is path or name, and it looks like a path component (not empty)
+			if (colName == "path" || colName == "name") && valStr != "" {
+				// Construct link relative to current URL path
+				// We use string concat to assume standard banquet URL structure
+				base := e.Request.URL.Path
+				if !strings.HasSuffix(base, "/") {
+					base += "/"
+				}
+				// Encode valStr? Browser handles some, but safer URL encoding might be needed?
+				// For now, raw concatenation as per user style preference (simple)
+				url = base + valStr
+			}
+
+			rowItems[i] = Cell{Text: valStr, Url: url}
 		}
 
-		tw.WriteHTMLRow(e.Response, rowCounter, strRow)
+		// Use template directly to bypass sqliter []string restriction
+		if err := tpl.ExecuteTemplate(e.Response, "row.html", rowItems); err != nil {
+			log.Printf("Template exec error: %v (Defined: %v)", err, tpl.DefinedTemplates())
+		}
 		rowCounter++
 	}
 
