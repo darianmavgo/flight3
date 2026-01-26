@@ -457,9 +457,29 @@ func handleBanquet(e *core.RequestEvent, tw *sqliter.TableWriter) error {
 		return e.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid banquet URL: " + err.Error()})
 	}
 
+	// PATCH: Sanitize reqURI for standard parser if user included scheme in host (e.g. user@https://host)
+	// This happens if the user doubles the scheme in the URL path.
+	sanitizedURI := reqURI
+	if idx := strings.LastIndex(sanitizedURI, "@"); idx != -1 {
+		after := sanitizedURI[idx+1:]
+		if strings.HasPrefix(after, "https:/") {
+			if strings.HasPrefix(after, "https://") {
+				sanitizedURI = sanitizedURI[:idx+1] + after[8:]
+			} else {
+				sanitizedURI = sanitizedURI[:idx+1] + after[7:]
+			}
+		} else if strings.HasPrefix(after, "http:/") {
+			if strings.HasPrefix(after, "http://") {
+				sanitizedURI = sanitizedURI[:idx+1] + after[7:]
+			} else {
+				sanitizedURI = sanitizedURI[:idx+1] + after[6:]
+			}
+		}
+	}
+
 	// PATCH: banquet.ParseNested might fail to parse Host/User for full URLs.
 	// We re-parse with net/url to ensure we capture them.
-	if u, err := url.Parse(reqURI); err == nil {
+	if u, err := url.Parse(sanitizedURI); err == nil {
 		if u.Scheme != "" && b.Scheme == "" {
 			b.Scheme = u.Scheme
 		}
@@ -749,9 +769,66 @@ func ensurePipelineCache(app core.App, cacheKey string, remote *core.Record, rem
 			return "", fmt.Errorf("fs new failed: %v", err)
 		}
 
+		// Try to treat as file first
 		obj, err := fSys.NewObject(context.Background(), remotePath)
 		if err != nil {
-			return "", fmt.Errorf("file not found: %v", err)
+			// If error, check if it's a directory by Listing
+			// Simple heuristic: if we can list it, treat as directory.
+			// Note: NewObject returns error if path is dir.
+			entries, listErr := fSys.List(context.Background(), remotePath)
+			if listErr == nil {
+				// It is a directory! Create a DB from the listing.
+				log.Printf("Path is a directory, creating listing DB: %s", dbPath)
+
+				// Ensure cache dir again just in case
+				if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+					return "", err
+				}
+
+				// Create DB
+				os.Remove(dbPath) // remove old if exists
+				db, err := sql.Open("sqlite3", dbPath)
+				if err != nil {
+					return "", fmt.Errorf("failed to open listing db: %v", err)
+				}
+				defer db.Close()
+
+				// Create Table
+				toRun := `CREATE TABLE tb0 (name TEXT, size INTEGER, is_dir BOOLEAN, mod_time TEXT);`
+				if _, err := db.Exec(toRun); err != nil {
+					return "", fmt.Errorf("failed to create listing table: %v", err)
+				}
+
+				// Insert entries
+				tx, err := db.Begin()
+				if err != nil {
+					return "", err
+				}
+				stmt, err := tx.Prepare("INSERT INTO tb0 (name, size, is_dir, mod_time) VALUES (?, ?, ?, ?)")
+				if err != nil {
+					return "", err
+				}
+				defer stmt.Close()
+
+				for _, entry := range entries {
+					_, isDir := entry.(rcfs.Directory)
+					_, err := stmt.Exec(entry.Remote(), entry.Size(), isDir, entry.ModTime(context.Background()).String())
+					if err != nil {
+						tx.Rollback()
+						return "", err
+					}
+				}
+				if err := tx.Commit(); err != nil {
+					return "", err
+				}
+
+				// We return the dbPath directly here, behaving as if "caching" is done.
+				// Since we generated the DB directly, we don't need the "Convert" step below.
+				return dbPath, nil
+			}
+
+			// If not a directory or list failed too, return original error
+			return "", fmt.Errorf("file not found: %v (list check: %v)", err, listErr)
 		}
 
 		rcReader, err := obj.Open(context.Background())

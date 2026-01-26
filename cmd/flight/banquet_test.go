@@ -151,3 +151,84 @@ func getMockTemplate() *template.Template {
 	t.New("row.html").Parse(`{{range .}}<td>{{.}}</td>{{end}}`)
 	return t
 }
+
+func TestBanquetDirectoryListing(t *testing.T) {
+	// 1. Setup Temp Dir Structure
+	tmpDir, err := os.MkdirTemp("", "pb_test_listing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create files/dirs to list
+	os.WriteFile(filepath.Join(tmpDir, "file1.txt"), []byte("content"), 0644)
+	os.Mkdir(filepath.Join(tmpDir, "subfolder"), 0755)
+
+	// 2. Setup App
+	testApp, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer testApp.Cleanup()
+
+	// 3. Create 'rclone_remotes' collection
+	if err := ensureCollections(testApp); err != nil {
+		t.Fatal(err)
+	}
+
+	// 4. Register 'r2-auth' remote (mocked as local)
+	remoteCollection, _ := testApp.FindCollectionByNameOrId("rclone_remotes")
+	remote := core.NewRecord(remoteCollection)
+	remote.Set("name", "r2-auth")
+	remote.Set("type", "local")
+	// On real S3, URL might be .../bucket-name/.
+	// But here for 'local', we point root to tmpDir.
+	remote.Set("config", map[string]interface{}{"root": tmpDir})
+	if err := testApp.Save(remote); err != nil {
+		t.Fatal(err)
+	}
+
+	// 5. Mock Request for "/https:/r2-auth@localhost/" (Simulating user's URL structure)
+	// The User requested: http://127.0.0.1:8090/https:/r2-auth@d8dc...r2.cloudflarestorage.com/
+	// We'll use localhost as host for simplicity, user alias is 'r2-auth'.
+	// Path is root (trailing slash).
+
+	reqURL := "/https:/r2-auth@localhost/"
+	req := httptest.NewRequest(http.MethodGet, reqURL, nil)
+	rec := httptest.NewRecorder()
+
+	e := &core.RequestEvent{
+		App: testApp,
+		Event: router.Event{
+			Request:  req,
+			Response: rec,
+		},
+	}
+
+	// 6. Invoke Handler
+	tpl := getMockTemplate()
+	tw := sqliter.NewTableWriter(tpl, sqliter.DefaultConfig())
+
+	// This is expected to FAIL currently (likely 500 or 404 or empty)
+	// We want to assert what *should* happen (200 OK with listing)
+	err = handleBanquet(e, tw)
+
+	// Logging result for debugging during TDD
+	t.Logf("Status: %d", rec.Code)
+	t.Logf("Body: %s", rec.Body.String())
+	if err != nil {
+		t.Logf("Error: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("Expected 200 OK for directory listing, got %d", rec.Code)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "file1.txt") {
+		t.Errorf("Listing missing 'file1.txt'")
+	}
+	if !strings.Contains(body, "subfolder") {
+		t.Errorf("Listing missing 'subfolder'")
+	}
+}
