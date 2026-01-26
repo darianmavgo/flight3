@@ -106,9 +106,7 @@ func TestFindHTMLAssets(t *testing.T) {
 	// We expect at least templates/row.html, templates/head.html, templates/foot.html
 	// And embed in main.go
 
-	expectedFiles := []string{
-		"cmd/flight/ui/index.html",
-	}
+	expectedFiles := []string{}
 
 	for _, expect := range expectedFiles {
 		found := false

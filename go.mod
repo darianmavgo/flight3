@@ -3,7 +3,7 @@ module github.com/darianmavgo/flight3
 go 1.25.0
 
 require (
-	github.com/darianmavgo/banquet v1.0.4
+	github.com/darianmavgo/banquet v1.0.6
 	github.com/darianmavgo/mksqlite v1.0.5
 	github.com/darianmavgo/sqliter v1.1.7
 	github.com/mattn/go-sqlite3 v1.14.33
