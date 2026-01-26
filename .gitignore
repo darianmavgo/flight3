@@ -83,3 +83,4 @@ stash/
 cmd/cli/cli
 cmd/demo/demo
 go_build_github_com_mavgo_com_flight
+user_settings/pb_data/cache/
