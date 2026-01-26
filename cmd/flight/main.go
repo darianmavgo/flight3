@@ -111,6 +111,39 @@ func main() {
 			log.Printf("Warning: importUserSecrets failed: %v", err)
 		}
 
+		// Update 'local' remote path from app_settings
+		if settingsInfo, err := app.FindFirstRecordByData("app_settings", "key", "serve_folder"); err == nil {
+			serveFolder := settingsInfo.GetString("value")
+			if serveFolder != "" {
+				// Resolve absolute path (relative to CWD)
+				absPath, _ := filepath.Abs(serveFolder)
+
+				// Find or Create 'local' remote
+				remoteName := "local"
+				rec, err := app.FindFirstRecordByData("rclone_remotes", "name", remoteName)
+				if err != nil {
+					// Not found? Create it requires finding the collection first
+					// But ensureCollections ran before this.
+					coll, _ := app.FindCollectionByNameOrId("rclone_remotes")
+					if coll != nil {
+						rec = core.NewRecord(coll)
+						rec.Set("name", remoteName)
+						rec.Set("type", "local")
+					}
+				}
+
+				if rec != nil {
+					log.Printf("Updating 'local' remote root to: %s", absPath)
+					rec.Set("config", map[string]interface{}{"root": absPath})
+					// Ensure type is local
+					rec.Set("type", "local")
+					if err := app.Save(rec); err != nil {
+						log.Printf("Failed to update 'local' remote: %v", err)
+					}
+				}
+			}
+		}
+
 		// Check for existing superusers
 		totalSuperusers, err := app.CountRecords("_superusers")
 		if err != nil {
@@ -177,15 +210,28 @@ func main() {
 
 		e.Router.GET("/*", func(evt *core.RequestEvent) error {
 			path := evt.Request.PathValue("*")
-			if path == "" {
-				path = "index.html"
+
+			// If path is empty (Root), serve banquet list of 'serve_folder' via 'local' user directly
+			if path == "" || path == "/" || path == "index.html" {
+				log.Printf("Serving local root for path: '%s'", path)
+				// Internal Rewrite: Serve local root contents
+				targetURI := "/https:/local@localhost/"
+				evt.Request.RequestURI = targetURI
+				evt.Request.URL.Path = targetURI
+				evt.Request.URL.RawPath = targetURI
+				return handleBanquet(evt, tw)
 			}
+
+			// Fallback logic for static files
 			f, err := subFS.Open(path)
 			if err != nil {
-				// Try index.html if not found (SPA fallback-like) or just 404
-				// For now, if we requested root, and failed, that's bad.
-				// If we requested random file, let it fall through
-				return evt.Next()
+				// Try index.html if not found (SPA fallback-like)
+				path = "index.html"
+				f, err = subFS.Open(path)
+				if err != nil {
+					// If index.html also missing, return 404
+					return evt.Next()
+				}
 			}
 			defer f.Close()
 
@@ -601,8 +647,22 @@ func handleBanquet(e *core.RequestEvent, tw *sqliter.TableWriter) error {
 	// Update Banquet struct with Table name (if missing or if we know it)
 	// For csv/file conversions, usually table is "tb0" or filename.
 	// If b.Table is empty or "sqlite_master", we might default to tb0 if we know it's a file conversion.
+	// Update Banquet struct with Table name (if missing or if we know it)
+	// For csv/file conversions, usually table is "tb0" or filename.
+	// If b.Table is empty or "sqlite_master", we might default to tb0 if we know it's a file conversion.
 	if b.Table == "" || b.Table == "sqlite_master" {
 		b.Table = "tb0" // Default for mksqlite single file
+	} else {
+		// Verify if b.Table exists, if not and tb0 exists, use tb0 (Happens for directory listings where path is parsed as table)
+		checkSQL := fmt.Sprintf("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='%s'", b.Table)
+		var count int
+		if err := db.QueryRow(checkSQL).Scan(&count); err == nil && count == 0 {
+			// Table doesn't exist. Check for tb0
+			if err := db.QueryRow("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='tb0'").Scan(&count); err == nil && count > 0 {
+				log.Printf("Table '%s' not found, falling back to 'tb0'", b.Table)
+				b.Table = "tb0"
+			}
+		}
 	}
 
 	// Construct SQL
