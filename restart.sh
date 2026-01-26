@@ -13,10 +13,13 @@ for PORT in "${PORTS[@]}"; do
     fi
 done
 
-# Optional: Clean up any stale go run binaries
-pkill -f "internal/pocket_rclone/main.go" 2>/dev/null
+# Clean up any stale go run binaries
+pkill -f "cmd/flight/main.go" 2>/dev/null
 
 echo "Restarting PocketBase..."
+mkdir -p logs
+echo "Logs redirected to logs/flight_output.txt"
+
 # Note: Using 'go run' for development. 
 # You can change this to use a built binary for faster restarts.
-go run ./internal/pocket_rclone/main.go serve
+go run ./cmd/flight/main.go serve > logs/flight_output.txt 2>&1

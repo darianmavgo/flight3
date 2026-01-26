@@ -35,7 +35,8 @@ func TestPocketbaseSyncEdit(t *testing.T) {
 	}
 
 	// Create a temp copy of the fixture to avoid modifying the original
-	tempDBPath := filepath.Join(os.TempDir(), "fixture_links_test.db")
+	// Use local test_output directory instead of /tmp for visibility and cleanup
+	tempDBPath := filepath.Join(wd, "../test_output", "fixture_links_test.db")
 	t.Logf("Using temp DB: %s", tempDBPath)
 
 	// Copy file in a separate block to ensure handles are closed
@@ -71,7 +72,7 @@ func TestPocketbaseSyncEdit(t *testing.T) {
 			return dbx.Open("sqlite", ":memory:")
 		},
 		// Disable default data dir to prevent other side effects, though we are overriding DBConnect
-		DefaultDataDir: os.TempDir(),
+		DefaultDataDir: filepath.Join(wd, "../test_output"),
 	})
 
 	// Bootstrap the app (initializes Dao, etc.)

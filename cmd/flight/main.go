@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"io"
 	"io/fs"
 	"log"
@@ -31,6 +32,7 @@ import (
 	"github.com/darianmavgo/mksqlite/converters"
 	_ "github.com/darianmavgo/mksqlite/converters/all"
 	"github.com/darianmavgo/mksqlite/converters/common"
+	"github.com/darianmavgo/sqliter/sqliter"
 
 	// Rclone imports
 	_ "github.com/rclone/rclone/backend/all" // Import all backends
@@ -66,7 +68,7 @@ func main() {
 		port := 8090
 		for i := 0; i < 3; i++ {
 			testPort := 8090 + i
-			ln, err := net.Listen("tcp", fmt.Sprintf(":%d", testPort))
+			ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", testPort))
 			if err == nil {
 				ln.Close()
 				port = testPort
@@ -91,6 +93,15 @@ func main() {
 		DefaultDataDir: dataDir,
 	})
 
+	// Initialize SQLiter
+	templatePath := "cmd/flight/templates"
+	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
+		// Try generic templates dir if cmd path fails
+		templatePath = "templates"
+	}
+	tpl := loadTemplates(templatePath)
+	tw := sqliter.NewTableWriter(tpl, sqliter.DefaultConfig())
+
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
 		if err := ensureCollections(app); err != nil {
 			return fmt.Errorf("ensureCollections: %w", err)
@@ -98,6 +109,31 @@ func main() {
 
 		if err := importUserSecrets(app, filepath.Dir(dataDir)); err != nil {
 			log.Printf("Warning: importUserSecrets failed: %v", err)
+		}
+
+		// Check for existing superusers
+		totalSuperusers, err := app.CountRecords("_superusers")
+		if err != nil {
+			log.Printf("Failed to count superusers: %v", err)
+		} else {
+			if totalSuperusers > 0 {
+				log.Printf("Acknowledged %d existing admin user(s)", totalSuperusers)
+			} else {
+				log.Printf("No admin users found. Creating default admin...")
+				superusers, err := app.FindCollectionByNameOrId("_superusers")
+				if err != nil {
+					log.Printf("Failed to find _superusers collection: %v", err)
+				} else {
+					record := core.NewRecord(superusers)
+					record.Set("email", "admin@example.com")
+					record.Set("password", "1234567890")
+					if err := app.Save(record); err != nil {
+						log.Printf("Failed to create default admin: %v", err)
+					} else {
+						log.Printf("Created default admin: admin@example.com")
+					}
+				}
+			}
 		}
 
 		// Middleware to invert Admin UI colors
@@ -184,12 +220,16 @@ func main() {
 
 		// GET /banquet/*
 		e.Router.GET("/banquet/*", func(evt *core.RequestEvent) error {
-			return handleBanquet(evt)
+			return handleBanquet(evt, tw)
 		})
 
 		// GET /http:/{any...} and /https:/{any...} (Direct Nested Banquet URLs)
-		e.Router.GET("/http:/{any...}", handleBanquet)
-		e.Router.GET("/https:/{any...}", handleBanquet)
+		e.Router.GET("/http:/{any...}", func(evt *core.RequestEvent) error {
+			return handleBanquet(evt, tw)
+		})
+		e.Router.GET("/https:/{any...}", func(evt *core.RequestEvent) error {
+			return handleBanquet(evt, tw)
+		})
 
 		return e.Next()
 		// Actually OnServe returns error. It doesn't take a 'next' handler usually in this context unless using middleware hooks.
@@ -388,7 +428,7 @@ func handleBrowse(app core.App, e *core.RequestEvent) error {
 	return e.JSON(http.StatusOK, results)
 }
 
-func handleBanquet(e *core.RequestEvent) error {
+func handleBanquet(e *core.RequestEvent, tw *sqliter.TableWriter) error {
 	app := e.App
 	// 1. Parse Banquet URL
 	// We want the raw RequestURI to capture everything.
@@ -589,34 +629,56 @@ func handleBanquet(e *core.RequestEvent) error {
 
 	// Get columns for map
 	cols, _ := rows.Columns()
-	result := []map[string]interface{}{}
+
+	// Start HTML Table
+	// We need http.ResponseWriter. e.Response is it? e.Response is http.ResponseWriter (or wraps it).
+	// Type casting might be needed if e.Response isn't exactly http.ResponseWriter interface in the way sqliter expects (it expects http.ResponseWriter).
+	// core.RequestEvent.Response is *pocketbase/tools/router.WriterResponse which implements http.ResponseWriter.
+
+	tw.StartHTMLTable(e.Response, cols, "Banquet Data: "+reqURI)
+
+	// Iterate and stream rows
+	columnPointers := make([]interface{}, len(cols))
+	rowCounter := 0
 
 	for rows.Next() {
-		// Scan into interface{}
 		columns := make([]interface{}, len(cols))
-		columnPointers := make([]interface{}, len(cols))
 		for i := range columns {
 			columnPointers[i] = &columns[i]
 		}
 
 		if err := rows.Scan(columnPointers...); err != nil {
-			return err
+			log.Printf("Scan error: %v", err)
+			continue
 		}
 
-		m := make(map[string]interface{})
-		for i, colName := range cols {
-			val := columnPointers[i].(*interface{})
-			// Handle bytes (string default)
-			if b, ok := (*val).([]byte); ok {
-				m[colName] = string(b)
+		// Convert to strings for simple rendering
+		strRow := make([]string, len(cols))
+		for i, val := range columns {
+			if b, ok := val.([]byte); ok {
+				strRow[i] = string(b)
 			} else {
-				m[colName] = *val
+				strRow[i] = fmt.Sprintf("%v", val)
 			}
 		}
-		result = append(result, m)
+
+		tw.WriteHTMLRow(e.Response, rowCounter, strRow)
+		rowCounter++
 	}
 
-	return e.JSON(http.StatusOK, result)
+	tw.EndHTMLTable(e.Response)
+
+	return nil // Handled manually
+}
+
+func loadTemplates(dir string) *template.Template {
+	pattern := filepath.Join(dir, "*.html")
+	t, err := template.ParseGlob(pattern)
+	if err != nil {
+		log.Printf("Warning: Failed to load templates from %s (pattern: %s): %v", dir, pattern, err)
+		return template.New("")
+	}
+	return t
 }
 
 func ensurePipelineCache(app core.App, cacheKey string, remote *core.Record, remotePath string, ttl float64) (string, error) {

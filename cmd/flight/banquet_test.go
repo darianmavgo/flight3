@@ -1,13 +1,15 @@
 package main
 
 import (
-	"encoding/json"
+	"html/template"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/darianmavgo/sqliter/sqliter"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 	"github.com/pocketbase/pocketbase/tools/router"
@@ -111,7 +113,11 @@ func TestHandleBanquet(t *testing.T) {
 	// Wait, handleBrowse uses PathValue. handleBanquet logic I wrote uses `banquet.ParseNested(reqURI)`.
 	// So logic should hold.
 
-	if err := handleBanquet(e); err != nil {
+	// Initialize dummy TableWriter
+	tpl := getMockTemplate()
+	tw := sqliter.NewTableWriter(tpl, sqliter.DefaultConfig())
+
+	if err := handleBanquet(e, tw); err != nil {
 		t.Fatalf("handleBanquet failed: %v", err)
 	}
 
@@ -120,18 +126,28 @@ func TestHandleBanquet(t *testing.T) {
 	}
 
 	// Verify JSON
-	var result []map[string]interface{}
-	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
-		t.Fatal(err)
+	// Verify HTML Output
+	body := rec.Body.String()
+	if !strings.Contains(body, "<table>") {
+		t.Error("Expected HTML output containing <table>")
 	}
 
-	if len(result) != 3 {
-		t.Errorf("Expected 3 rows, got %d", len(result))
+	// Check content
+	if !strings.Contains(body, "alpha") {
+		t.Errorf("Expected body to contain 'alpha, got: %s", body)
 	}
+	if !strings.Contains(body, "beta") {
+		t.Errorf("Expected body to contain 'beta', got: %s", body)
+	}
+	if !strings.Contains(body, "gamma") {
+		t.Errorf("Expected body to contain 'gamma', got: %s", body)
+	}
+}
 
-	// Check first row
-	row1 := result[0]
-	if row1["name"] != "alpha" {
-		t.Errorf("Expected row1.name = alpha, got %v", row1["name"])
-	}
+func getMockTemplate() *template.Template {
+	t := template.New("root")
+	t.New("head.html").Parse(`<html><body><table>`)
+	t.New("foot.html").Parse(`</table></body></html>`)
+	t.New("row.html").Parse(`{{range .}}<td>{{.}}</td>{{end}}`)
+	return t
 }

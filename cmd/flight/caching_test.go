@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/darianmavgo/sqliter/sqliter"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 	"github.com/pocketbase/pocketbase/tools/router"
@@ -74,7 +75,12 @@ func TestBanquetCaching(t *testing.T) {
 				Response: rec,
 			},
 		}
-		if err := handleBanquet(e); err != nil {
+
+		// Dummy Tw
+		tpl := getMockTemplate()
+		tw := sqliter.NewTableWriter(tpl, sqliter.DefaultConfig())
+
+		if err := handleBanquet(e, tw); err != nil {
 			t.Fatalf("handleBanquet failed: %v", err)
 		}
 		if rec.Code != 200 {
@@ -147,7 +153,11 @@ func TestBanquetCaching(t *testing.T) {
 		rec1 := httptest.NewRecorder()
 		e1 := &core.RequestEvent{App: testApp, Event: router.Event{Request: req1, Response: rec1}}
 
-		if err := handleBanquet(e1); err != nil {
+		// Dummy Tw
+		tpl := getMockTemplate()
+		tw := sqliter.NewTableWriter(tpl, sqliter.DefaultConfig())
+
+		if err := handleBanquet(e1, tw); err != nil {
 			t.Fatalf("Req1 failed: %v", err)
 		}
 
@@ -183,7 +193,11 @@ func TestBanquetCaching(t *testing.T) {
 		rec2 := httptest.NewRecorder()
 		e2 := &core.RequestEvent{App: testApp, Event: router.Event{Request: req2, Response: rec2}}
 
-		if err := handleBanquet(e2); err != nil {
+		// Dummy Tw
+		tpl = getMockTemplate()
+		tw = sqliter.NewTableWriter(tpl, sqliter.DefaultConfig())
+
+		if err := handleBanquet(e2, tw); err != nil {
 			t.Fatalf("Req2 failed: %v", err)
 		}
 

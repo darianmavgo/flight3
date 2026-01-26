@@ -10,7 +10,9 @@ import (
 )
 
 func TestBanquetDirectR2(t *testing.T) {
-	tmpDir, _ := os.MkdirTemp("", "pb_test_banquet_*")
+	// Use test_output/banquet_test_data instead of random temp dir
+	tmpDir := "../test_output/banquet_test_data"
+	os.MkdirAll(tmpDir, 0755)
 	defer os.RemoveAll(tmpDir)
 
 	app := pocketbase.NewWithConfig(pocketbase.Config{
