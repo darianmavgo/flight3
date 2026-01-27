@@ -71,6 +71,16 @@ func Flight() {
 			return HandleBanquet(e, tw, tpl, true)
 		}
 
+		// Rclone config UI and API routes (must be before catch-all)
+		se.Router.GET("/_/rclone_config", HandleRcloneConfigUI)
+		se.Router.GET("/_/rclone_config/api/providers", HandleListProviders)
+		se.Router.GET("/_/rclone_config/api/provider/{type}", HandleGetProviderSchema)
+		se.Router.GET("/_/rclone_config/api/remotes", HandleListRemotes)
+		se.Router.POST("/_/rclone_config/api/remotes", HandleCreateRemote)
+		se.Router.PUT("/_/rclone_config/api/remotes/{id}", HandleUpdateRemote)
+		se.Router.DELETE("/_/rclone_config/api/remotes/{id}", HandleDeleteRemote)
+		se.Router.POST("/_/rclone_config/api/test", HandleTestRemote)
+
 		// Register root path handler
 		se.Router.Any("/", banquetHandler)
 
