@@ -85,3 +85,6 @@ cmd/demo/demo
 go_build_github_com_mavgo_com_flight
 user_settings/pb_data/cache/
 flight
+
+# Build artifacts - DMG files
+target_platforms/**/*.dmg
