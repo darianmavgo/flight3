@@ -9,8 +9,8 @@ import (
 
 	"github.com/darianmavgo/banquet"
 	"github.com/darianmavgo/sqliter/sqliter"
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/pocketbase/pocketbase/core"
+	_ "modernc.org/sqlite"
 )
 
 // ServeFromCache opens cached SQLite DB and serves query results
@@ -18,7 +18,7 @@ func ServeFromCache(cachePath string, b *banquet.Banquet, tw *sqliter.TableWrite
 	log.Printf("[SERVER] Serving from cache: %s", cachePath)
 
 	// Open SQLite database
-	db, err := sql.Open("sqlite3", cachePath)
+	db, err := sql.Open("sqlite", cachePath)
 	if err != nil {
 		return fmt.Errorf("failed to open cache database: %w", err)
 	}
@@ -126,7 +126,11 @@ func buildSQLQuery(b *banquet.Banquet) string {
 	// SELECT clause
 	selectClause := "*"
 	if len(b.Select) > 0 && b.Select[0] != "*" {
-		selectClause = strings.Join(b.Select, ", ")
+		quotedSelects := make([]string, len(b.Select))
+		for i, col := range b.Select {
+			quotedSelects[i] = quoteIdentifier(col)
+		}
+		selectClause = strings.Join(quotedSelects, ", ")
 	}
 	parts = append(parts, "SELECT "+selectClause)
 
@@ -135,7 +139,7 @@ func buildSQLQuery(b *banquet.Banquet) string {
 	if table == "" {
 		table = "tb0" // Default table name
 	}
-	parts = append(parts, "FROM "+table)
+	parts = append(parts, "FROM "+quoteIdentifier(table))
 
 	// WHERE clause
 	if b.Where != "" {
@@ -144,7 +148,7 @@ func buildSQLQuery(b *banquet.Banquet) string {
 
 	// GROUP BY clause
 	if b.GroupBy != "" {
-		parts = append(parts, "GROUP BY "+b.GroupBy)
+		parts = append(parts, "GROUP BY "+quoteIdentifier(b.GroupBy))
 	}
 
 	// HAVING clause
@@ -154,7 +158,7 @@ func buildSQLQuery(b *banquet.Banquet) string {
 
 	// ORDER BY clause
 	if b.OrderBy != "" {
-		orderBy := b.OrderBy
+		orderBy := quoteIdentifier(b.OrderBy)
 		if b.SortDirection != "" {
 			orderBy += " " + b.SortDirection
 		}
@@ -172,4 +176,14 @@ func buildSQLQuery(b *banquet.Banquet) string {
 	}
 
 	return strings.Join(parts, " ")
+}
+
+// quoteIdentifier wraps a string in double quotes and escapes any double quotes within.
+func quoteIdentifier(s string) string {
+	if s == "" || s == "*" {
+		return s
+	}
+	// If it already seems quoted or is a complex expression, skip for now?
+	// But banquet usually returns clean names.
+	return "\"" + strings.ReplaceAll(s, "\"", "\"\"") + "\""
 }

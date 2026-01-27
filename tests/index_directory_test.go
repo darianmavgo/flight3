@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/darianmavgo/flight3/internal/flight"
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/pocketbase/pocketbase"
+	_ "modernc.org/sqlite"
 )
 
 // TestIndexDirectoryRemote verifies that the IndexDirectory method correctly
@@ -82,7 +82,7 @@ func TestIndexDirectoryRemote(t *testing.T) {
 	}
 
 	// 9. Open and verify the database schema
-	db, err := sql.Open("sqlite3", cachePath)
+	db, err := sql.Open("sqlite", cachePath)
 	if err != nil {
 		t.Fatalf("Failed to open cache database: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestIndexDirectoryLocal(t *testing.T) {
 	}
 
 	// 3. Verify the database
-	db, err := sql.Open("sqlite3", cachePath)
+	db, err := sql.Open("sqlite", cachePath)
 	if err != nil {
 		t.Fatalf("Failed to open cache database: %v", err)
 	}

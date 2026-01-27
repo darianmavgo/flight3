@@ -270,7 +270,7 @@ func (rm *RcloneManager) IndexDirectory(v *vfs.VFS, remotePath string, localCach
 
 	// Open/Create SQLite database
 	// We use the same name "tb0" and same columns as mksqlite filesystem converter
-	db, err := sql.Open("sqlite3", localCachePath)
+	db, err := sql.Open("sqlite", localCachePath)
 	if err != nil {
 		return fmt.Errorf("failed to open cache database: %w", err)
 	}

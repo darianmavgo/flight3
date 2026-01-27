@@ -19,7 +19,34 @@ func EnsureCollections(app core.App) error {
 	if err := EnsureMksqliteConfigs(app); err != nil {
 		return err
 	}
-	return EnsureDataPipelines(app)
+	if err := EnsureDataPipelines(app); err != nil {
+		return err
+	}
+	return EnsureBanquetLinks(app)
+}
+
+func EnsureBanquetLinks(app core.App) error {
+	name := "banquet_links"
+	existing, err := app.FindCollectionByNameOrId(name)
+	if err == nil && existing != nil {
+		return nil
+	}
+
+	collection := core.NewBaseCollection(name)
+	// System fields (id, created, updated) are added by NewBaseCollection by default in modern PB,
+	// but let's be safe and let them be if they are there.
+
+	collection.Fields.Add(&core.TextField{Name: "original_url"})
+	collection.Fields.Add(&core.TextField{Name: "scheme"})
+	collection.Fields.Add(&core.TextField{Name: "user"})
+	collection.Fields.Add(&core.TextField{Name: "host"})
+	collection.Fields.Add(&core.TextField{Name: "path"})
+	collection.Fields.Add(&core.URLField{Name: "explore_link"})
+	collection.Fields.Add(&core.TextField{Name: "datasetpath"})
+	collection.Fields.Add(&core.TextField{Name: "columnset"})
+	collection.Fields.Add(&core.TextField{Name: "query"})
+
+	return app.Save(collection)
 }
 
 func EnsureRcloneRemotes(app core.App) error {

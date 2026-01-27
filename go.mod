@@ -6,10 +6,10 @@ require (
 	github.com/darianmavgo/banquet v1.0.6
 	github.com/darianmavgo/mksqlite v1.0.5
 	github.com/darianmavgo/sqliter v1.1.7
-	github.com/mattn/go-sqlite3 v1.14.33
 	github.com/pocketbase/dbx v1.11.0
 	github.com/pocketbase/pocketbase v0.36.1
 	github.com/rclone/rclone v1.72.1
+	modernc.org/sqlite v1.44.2
 )
 
 require (
@@ -48,6 +48,7 @@ require (
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
+	github.com/mattn/go-sqlite3 v1.14.33 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/go-wordwrap v1.0.1 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
@@ -97,5 +98,4 @@ require (
 	modernc.org/libc v1.67.6 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
-	modernc.org/sqlite v1.44.2 // indirect
 )
