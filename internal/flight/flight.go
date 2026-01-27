@@ -4,6 +4,7 @@ package flight
 import (
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	_ "github.com/darianmavgo/mksqlite/converters/all"
@@ -19,8 +20,6 @@ func Flight() {
 		os.Args = append(os.Args, "serve")
 	}
 
-	// Calculate absolute path for data directory to avoid CWD ambiguity
-
 	app := pocketbase.New()
 
 	// Initialize SQLiter with Embedded Templates
@@ -33,26 +32,50 @@ func Flight() {
 	// Initialize TableWriter with embedded templates
 	tw := sqliter.NewTableWriter(tpl, sqliter.DefaultConfig())
 
+	// Initialize rclone early (doesn't need database)
+	cacheDir := filepath.Join(app.DataDir(), "cache")
+	if err := InitRclone(cacheDir); err != nil {
+		log.Fatalf("Error initializing rclone: %v", err)
+	}
+	log.Printf("Rclone manager initialized with cache dir: %s", cacheDir)
+
+	// OnServe: Setup collections when server starts (database is ready by then)
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
-		// 1. Register your custom catch-all route
-		se.Router.Any("{path...}", func(e *core.RequestEvent) error {
+		// Ensure collections exist (database is ready now)
+		if err := EnsureCollections(se.App); err != nil {
+			log.Printf("Error ensuring collections: %v", err)
+			return err
+		}
+		log.Printf("PocketBase collections ensured")
+
+		// Ensure superuser exists
+		if err := EnsureSuperUser(se.App, "admin@example.com", "password123"); err != nil {
+			log.Printf("Error ensuring superuser: %v", err)
+		}
+
+		// Handler function for banquet requests
+		banquetHandler := func(e *core.RequestEvent) error {
 			path := e.Request.URL.Path
 
-			// 1. DIRECT POCKETBASE PATHS
+			// Don't intercept PocketBase paths
 			if strings.HasPrefix(path, "/_/") || strings.HasPrefix(path, "/api/") {
 				return e.Next()
 			}
 
-			// 2. COMMON WEB STANDARDS (If you want PB to handle them)
-			// This prevents your BanquetRouter from needing to handle mundane files.
+			// Don't intercept common web standards
 			if path == "/favicon.ico" || path == "/robots.txt" || path == "/sitemap.xml" {
 				return e.Next()
 			}
 
-			// 3. ORCHESTRATION: Pass the request to your BanquetRouter
-			// Assuming BanquetRouter.ServeHTTP(w, r) or a custom handler function
+			// Pass to BanquetHandler
 			return HandleBanquet(e, tw, tpl, true)
-		})
+		}
+
+		// Register root path handler
+		se.Router.Any("/", banquetHandler)
+
+		// Register catch-all route for all other paths
+		se.Router.Any("/*", banquetHandler)
 
 		return se.Next()
 	})

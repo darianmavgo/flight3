@@ -31,8 +31,11 @@ func EnsureRcloneRemotes(app core.App) error {
 
 	collection := core.NewBaseCollection(name)
 	collection.Fields.Add(&core.TextField{Name: "name", Required: true})
-	collection.Fields.Add(&core.TextField{Name: "type", Required: true}) // e.g. s3, drive
-	collection.Fields.Add(&core.JSONField{Name: "config"})               // e.g. {"access_key_id": "...", ...}
+	collection.Fields.Add(&core.TextField{Name: "type", Required: true})    // e.g. s3, drive
+	collection.Fields.Add(&core.JSONField{Name: "config"})                  // e.g. {"access_key_id": "...", ...}
+	collection.Fields.Add(&core.JSONField{Name: "vfs_settings"})            // Optional VFS tuning per remote
+	collection.Fields.Add(&core.BoolField{Name: "enabled", Required: true}) // Enable/disable remote
+	collection.Fields.Add(&core.TextField{Name: "description"})             // Documentation
 
 	return app.Save(collection)
 }
@@ -102,4 +105,28 @@ func EnsurePipelineCache(app core.App, cacheKey string, remote *core.Record, rem
 		return "", err
 	}
 	return filepath.Join(cacheDir, cacheKey+".db"), nil
+}
+
+func EnsureSuperUser(app core.App, email, password string) error {
+	superuser, err := app.FindAuthRecordByEmail("_superusers", email)
+	if err != nil {
+		collection, err := app.FindCollectionByNameOrId("_superusers")
+		if err != nil {
+			return err
+		}
+		record := core.NewRecord(collection)
+		record.SetEmail(email)
+		record.SetPassword(password)
+		if err := app.Save(record); err != nil {
+			return err
+		}
+		fmt.Printf("Created superuser %s\n", email)
+	} else {
+		superuser.SetPassword(password)
+		if err := app.Save(superuser); err != nil {
+			return err
+		}
+		fmt.Printf("Ensured superuser %s password is correct\n", email)
+	}
+	return nil
 }
