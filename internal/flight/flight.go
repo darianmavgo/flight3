@@ -3,9 +3,13 @@ package flight
 // deliberately import everything here as the primary location of orchestration.
 import (
 	"log"
+	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"time"
 
 	_ "github.com/darianmavgo/mksqlite/converters/all"
 	"github.com/darianmavgo/sqliter/sqliter"
@@ -18,6 +22,31 @@ func Flight() {
 	// Default to "serve" command if no arguments are provided
 	if len(os.Args) == 1 {
 		os.Args = append(os.Args, "serve")
+	}
+
+	// Detect if we are serving and if --http is already set
+	isServe := false
+	httpAddr := ""
+	for i, arg := range os.Args {
+		if arg == "serve" {
+			isServe = true
+		}
+		if strings.HasPrefix(arg, "--http=") {
+			httpAddr = strings.TrimPrefix(arg, "--http=")
+		} else if arg == "--http" && i+1 < len(os.Args) {
+			httpAddr = os.Args[i+1]
+		}
+	}
+
+	// If serving but no --http address specified, find a random high port on [::1]
+	// This makes it enjoyable on macOS as requested.
+	if isServe && httpAddr == "" {
+		l, err := net.Listen("tcp", "[::1]:0")
+		if err == nil {
+			httpAddr = l.Addr().String()
+			l.Close()
+			os.Args = append(os.Args, "--http="+httpAddr)
+		}
 	}
 
 	app := pocketbase.New()
@@ -86,6 +115,21 @@ func Flight() {
 
 		// Register catch-all route for all other paths
 		se.Router.Any("/*", banquetHandler)
+
+		// Launch Chrome on macOS if we are serving
+		if isServe && httpAddr != "" && runtime.GOOS == "darwin" {
+			go func() {
+				// Give the server a moment to bind and start listening
+				time.Sleep(1 * time.Second)
+				url := "http://" + httpAddr
+				log.Printf("[SILICON] Enjoying Flight3: Launching Google Chrome to %s", url)
+				err := exec.Command("open", "-a", "Google Chrome", url).Start()
+				if err != nil {
+					log.Printf("[SILICON] Failed to launch Google Chrome: %v (falling back to default browser)", err)
+					exec.Command("open", url).Start()
+				}
+			}()
+		}
 
 		return se.Next()
 	})

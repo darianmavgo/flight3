@@ -69,7 +69,7 @@ export FLIGHT3_PUBLIC_DIR="$RESOURCES_DIR/pb_public"
 
 # Launch Flight3
 cd "$DATA_DIR"
-exec "$DIR/flight3" serve --http=127.0.0.1:8090
+exec "$DIR/flight3" serve
 EOF
 
 chmod +x "$MACOS_DIR/launcher.sh"
@@ -84,13 +84,10 @@ This is Flight3 compiled for Intel-based Macs (x86_64).
 
 1. Copy Flight3.app to your Applications folder
 2. On first launch, you may need to right-click and select "Open" to bypass Gatekeeper
-3. The app will start a local server at http://127.0.0.1:8090
+   - Admin UI: http://[::1]:PORT/_/ (where PORT is the random port assigned)
+   - Data API: http://[::1]:PORT/
 
-## Accessing Flight3
-
-Once the app is running:
-- Admin UI: http://127.0.0.1:8090/_/
-- Data API: http://127.0.0.1:8090/
+Flight3 will automatically attempt to launch Google Chrome to these addresses on startup.
 
 ## Data Location
 

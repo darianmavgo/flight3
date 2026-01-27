@@ -102,6 +102,8 @@ func HandleBanquet(e *core.RequestEvent, tw *sqliter.TableWriter, tpl *template.
 			if err := rcloneManager.IndexDirectory(vfs, b.DataSetPath, cachePath); err != nil {
 				return fmt.Errorf("failed to index remote directory: %w", err)
 			}
+			// When indexing a directory, the resulting table name in the cache is always 'tb0'
+			b.Table = "tb0"
 		} else {
 			// Remote file - fetch and convert
 			tempDir := filepath.Join(e.App.DataDir(), "temp")
@@ -226,7 +228,16 @@ func HandleLocalDataset(e *core.RequestEvent, b *banquet.Banquet, tw *sqliter.Ta
 				log.Printf("[LOCAL] File/Directory converted successfully")
 			}
 		}
+
+		// If it's a directory, we must use 'tb0' for the listing table
+		if fileInfo.IsDir() {
+			b.Table = "tb0"
+		}
 	} else {
+		// Cache hit, but ensure table is correct if it's a directory
+		if fileInfo.IsDir() {
+			b.Table = "tb0"
+		}
 		if verbose {
 			log.Printf("[LOCAL] Cache hit, serving from cache")
 		}

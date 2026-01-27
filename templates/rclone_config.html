@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -155,7 +156,7 @@
 
         .provider-card:hover {
             border-color: #1a73e8;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
 
         .provider-card-name {
@@ -313,8 +314,13 @@
         }
 
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
         }
 
         /* Messages */
@@ -357,6 +363,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <!-- Sidebar -->
@@ -402,8 +409,12 @@
         async function loadProviders() {
             try {
                 const res = await fetch('/_/rclone_config/api/providers');
+                if (!res.ok) {
+                    const error = await res.json();
+                    throw new Error(error.error || 'Failed to fetch providers');
+                }
                 const data = await res.json();
-                providers = data.providers;
+                providers = data.providers || [];
             } catch (err) {
                 showError('Failed to load providers: ' + err.message);
             }
@@ -412,10 +423,16 @@
         async function loadRemotes() {
             try {
                 const res = await fetch('/_/rclone_config/api/remotes');
+                if (!res.ok) {
+                    const error = await res.json();
+                    throw new Error(error.error || 'Failed to fetch remotes');
+                }
                 const data = await res.json();
-                remotes = data.remotes;
+                remotes = data.remotes || [];
                 renderRemoteList();
             } catch (err) {
+                remotes = [];
+                renderRemoteList();
                 showError('Failed to load remotes: ' + err.message);
             }
         }
@@ -423,7 +440,7 @@
         async function createRemote(remoteData) {
             const res = await fetch('/_/rclone_config/api/remotes', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(remoteData)
             });
             if (!res.ok) {
@@ -436,7 +453,7 @@
         async function updateRemote(id, remoteData) {
             const res = await fetch(`/_/rclone_config/api/remotes/${id}`, {
                 method: 'PUT',
-                headers: {'Content-Type': 'application/json'},
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(remoteData)
             });
             if (!res.ok) {
@@ -481,16 +498,16 @@
             currentView = 'provider-selection';
             document.getElementById('breadcrumb').innerHTML = '<a href="#" onclick="showWelcome()">Home</a> > Select Provider';
             document.getElementById('mainTitle').textContent = 'Select a Provider';
-            
+
             const searchBox = '<input type="text" class="search-box" placeholder="Search providers..." onkeyup="filterProviders(this.value)">';
             const grid = '<div class="provider-grid" id="providerGrid"></div>';
-            
+
             document.getElementById('mainContent').innerHTML = searchBox + grid;
             renderProviders();
         }
 
         function filterProviders(query) {
-            const filtered = providers.filter(p => 
+            const filtered = providers.filter(p =>
                 p.name.toLowerCase().includes(query.toLowerCase()) ||
                 p.description.toLowerCase().includes(query.toLowerCase())
             );
@@ -520,12 +537,12 @@
         function showConfigForm(provider, existingRemote = null) {
             currentView = 'config-form';
             const isEdit = !!existingRemote;
-            
-            document.getElementById('breadcrumb').innerHTML = 
+
+            document.getElementById('breadcrumb').innerHTML =
                 `<a href="#" onclick="showWelcome()">Home</a> > 
                  <a href="#" onclick="showProviderSelection()">Providers</a> > 
                  ${escapeHtml(provider.name)}`;
-            document.getElementById('mainTitle').textContent = 
+            document.getElementById('mainTitle').textContent =
                 (isEdit ? 'Edit' : 'New') + ' Remote: ' + provider.name;
 
             const basicOptions = provider.options.filter(opt => !opt.advanced);
@@ -758,4 +775,5 @@
         init();
     </script>
 </body>
+
 </html>

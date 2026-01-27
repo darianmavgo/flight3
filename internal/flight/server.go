@@ -67,10 +67,12 @@ func ServeFromCache(cachePath string, b *banquet.Banquet, tw *sqliter.TableWrite
 		// Convert to strings
 		cells := make([]string, len(columns))
 
-		// Check if this looks like a directory listing from mksqlite filesystem converter
+		// Check if this looks like a directory listing or a table listing
 		isDirListing := false
+		isSqliteMaster := b.Table == "sqlite_master"
 		nameIdx := -1
 		pathIdx := -1
+		typeIdx := -1
 		for i, col := range columns {
 			if col == "name" {
 				nameIdx = i
@@ -81,6 +83,9 @@ func ServeFromCache(cachePath string, b *banquet.Banquet, tw *sqliter.TableWrite
 			if col == "is_dir" {
 				isDirListing = true
 			}
+			if col == "type" {
+				typeIdx = i
+			}
 		}
 
 		for i, val := range values {
@@ -89,17 +94,55 @@ func ServeFromCache(cachePath string, b *banquet.Banquet, tw *sqliter.TableWrite
 				rawVal = fmt.Sprintf("%v", val)
 			}
 
-			// If it's a directory listing and we're on the name or path column, make it a link
+			// Determine if this row should be a link
+			shouldLink := false
+			link := rawVal
+			icon := ""
+
 			if isDirListing && (i == nameIdx || i == pathIdx) && rawVal != "" && rawVal != "." && rawVal != ".." {
+				shouldLink = true
+
+				// Determine if it's a directory row
+				isDirRow := false
+				if isDirListing {
+					// In some converters is_dir might be missing per row but present in columns
+					// Look for 'is_dir' column in current row values
+					for j, col := range columns {
+						if col == "is_dir" && values[j] != nil {
+							isDirRow = fmt.Sprintf("%v", values[j]) == "1" || fmt.Sprintf("%v", values[j]) == "true"
+							break
+						}
+					}
+				}
+
+				if isDirRow {
+					icon = "📁 "
+				} else {
+					icon = "📄 "
+				}
+
 				// Use the path column value as the link destination if available
-				link := rawVal
 				if pathIdx != -1 && i == nameIdx {
 					if pVal := values[pathIdx]; pVal != nil {
 						link = fmt.Sprintf("%v", pVal)
 					}
 				}
+			} else if isSqliteMaster && i == nameIdx && rawVal != "" {
+				// Check if it's a table (not an index or view)
+				isTable := true
+				if typeIdx != -1 && values[typeIdx] != nil {
+					isTable = fmt.Sprintf("%v", values[typeIdx]) == "table"
+				}
+				if isTable {
+					shouldLink = true
+					icon = "📊 "
+					// Construct link: /DataSetPath/TableName
+					link = b.DataSetPath + "/" + rawVal
+				}
+			}
 
-				cells[i] = fmt.Sprintf("<a href=\"/%s\">%s</a>", strings.TrimPrefix(link, "/"), rawVal)
+			if shouldLink {
+				cells[i] = fmt.Sprintf("<a href=\"/%s\">%s%s</a>", strings.TrimPrefix(link, "/"), icon, rawVal)
 			} else {
 				cells[i] = rawVal
 			}
