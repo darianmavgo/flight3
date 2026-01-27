@@ -66,11 +66,42 @@ func ServeFromCache(cachePath string, b *banquet.Banquet, tw *sqliter.TableWrite
 
 		// Convert to strings
 		cells := make([]string, len(columns))
+
+		// Check if this looks like a directory listing from mksqlite filesystem converter
+		isDirListing := false
+		nameIdx := -1
+		pathIdx := -1
+		for i, col := range columns {
+			if col == "name" {
+				nameIdx = i
+			}
+			if col == "path" {
+				pathIdx = i
+			}
+			if col == "is_dir" {
+				isDirListing = true
+			}
+		}
+
 		for i, val := range values {
-			if val == nil {
-				cells[i] = ""
+			rawVal := ""
+			if val != nil {
+				rawVal = fmt.Sprintf("%v", val)
+			}
+
+			// If it's a directory listing and we're on the name or path column, make it a link
+			if isDirListing && (i == nameIdx || i == pathIdx) && rawVal != "" && rawVal != "." && rawVal != ".." {
+				// Use the path column value as the link destination if available
+				link := rawVal
+				if pathIdx != -1 && i == nameIdx {
+					if pVal := values[pathIdx]; pVal != nil {
+						link = fmt.Sprintf("%v", pVal)
+					}
+				}
+
+				cells[i] = fmt.Sprintf("<a href=\"/%s\">%s</a>", strings.TrimPrefix(link, "/"), rawVal)
 			} else {
-				cells[i] = fmt.Sprintf("%v", val)
+				cells[i] = rawVal
 			}
 		}
 

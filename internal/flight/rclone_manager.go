@@ -3,12 +3,14 @@ package flight
 import (
 	"context"
 	"crypto/md5"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/rclone/rclone/fs"
@@ -206,6 +208,11 @@ func LookupRemote(app core.App, hostname string) (*core.Record, error) {
 	return record, nil
 }
 
+// Stat returns metadata for a remote path
+func (rm *RcloneManager) Stat(v *vfs.VFS, remotePath string) (vfs.Node, error) {
+	return v.Stat(remotePath)
+}
+
 // FetchFile downloads a file from remote to local cache using VFS
 func (rm *RcloneManager) FetchFile(v *vfs.VFS, remotePath string, localCachePath string) error {
 	log.Printf("[RCLONE] Fetching file: %s -> %s", remotePath, localCachePath)
@@ -236,6 +243,90 @@ func (rm *RcloneManager) FetchFile(v *vfs.VFS, remotePath string, localCachePath
 	}
 
 	log.Printf("[RCLONE] Fetched %d bytes successfully", written)
+	return nil
+}
+
+// IndexDirectory creates a SQLite database containing the listing of a remote directory
+// This matches the schema and table name used by mksqlite's filesystem converter
+func (rm *RcloneManager) IndexDirectory(v *vfs.VFS, remotePath string, localCachePath string) error {
+	log.Printf("[RCLONE] Indexing directory: %s -> %s", remotePath, localCachePath)
+
+	// Ensure local cache directory exists
+	if err := os.MkdirAll(filepath.Dir(localCachePath), 0755); err != nil {
+		return fmt.Errorf("failed to create cache directory: %w", err)
+	}
+
+	// Open/Create SQLite database
+	// We use the same name "tb0" and same columns as mksqlite filesystem converter
+	db, err := sql.Open("sqlite3", localCachePath)
+	if err != nil {
+		return fmt.Errorf("failed to open cache database: %w", err)
+	}
+	defer db.Close()
+
+	// Create table
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS tb0 (
+		path TEXT,
+		name TEXT,
+		size TEXT,
+		extension TEXT,
+		mod_time TEXT,
+		is_dir TEXT
+	)`)
+	if err != nil {
+		return fmt.Errorf("failed to create table: %w", err)
+	}
+
+	// Clear existing data (if any)
+	_, err = db.Exec("DELETE FROM tb0")
+	if err != nil {
+		return fmt.Errorf("failed to clear table: %w", err)
+	}
+
+	// Get directory node
+	node, err := v.Stat(remotePath)
+	if err != nil {
+		return fmt.Errorf("failed to stat remote directory: %w", err)
+	}
+
+	dir, ok := node.(*vfs.Dir)
+	if !ok {
+		return fmt.Errorf("path is not a directory")
+	}
+
+	// Read entries
+	entries, err := dir.ReadDirAll()
+	if err != nil {
+		return fmt.Errorf("failed to read directory: %w", err)
+	}
+
+	// Prepare insert statement
+	stmt, err := db.Prepare("INSERT INTO tb0 (path, name, size, extension, mod_time, is_dir) VALUES (?, ?, ?, ?, ?, ?)")
+	if err != nil {
+		return fmt.Errorf("failed to prepare statement: %w", err)
+	}
+	defer stmt.Close()
+
+	// Insert entries
+	for _, entry := range entries {
+		name := entry.Name()
+		relPath := filepath.Join(remotePath, name)
+		size := fmt.Sprintf("%d", entry.Size())
+		ext := filepath.Ext(name)
+		modTime := entry.ModTime().Format(time.RFC3339)
+		isDir := "0"
+		if entry.IsDir() {
+			isDir = "1"
+			size = "0" // Traditionally 0 or entry count for dirs in some tools, mksqlite uses size
+		}
+
+		_, err = stmt.Exec(relPath, name, size, ext, modTime, isDir)
+		if err != nil {
+			log.Printf("[RCLONE] Warning: failed to index entry %s: %v", name, err)
+		}
+	}
+
+	log.Printf("[RCLONE] Indexed %d entries successfully", len(entries))
 	return nil
 }
 

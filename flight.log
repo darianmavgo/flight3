@@ -1,0 +1,23 @@
+2026/01/26 21:56:19 NOTICE: [RCLONE] Initialized with cache directory: pb_data/cache
+2026/01/26 21:56:19 NOTICE: Rclone manager initialized with cache dir: pb_data/cache
+2026/01/26 21:56:19 NOTICE: PocketBase collections ensured
+Ensured superuser admin@example.com password is correct
+2026/01/26 21:56:19 Server started at http://127.0.0.1:8090
+├─ REST API:  http://127.0.0.1:8090/api/
+└─ Dashboard: http://127.0.0.1:8090/_/
+rawurl: 
+Scheme: 
+  Host:   
+  Path:   
+  RawQuery: 
+  Where:      ""
+  Table:      ""
+  Limit:      ""
+2026/01/26 21:56:20 NOTICE: [LOCAL] Handling local dataset: 
+2026/01/26 21:56:20 NOTICE: [LOCAL] Resolved file path: pb_public
+2026/01/26 21:56:20 NOTICE: [LOCAL] Cache key: local
+2026/01/26 21:56:20 NOTICE: [LOCAL] Cache path: pb_data/cache/local.db
+2026/01/26 21:56:20 NOTICE: [LOCAL] Cache hit, serving from cache
+2026/01/26 21:56:20 NOTICE: [SERVER] Serving from cache: pb_data/cache/local.db
+2026/01/26 21:56:20 NOTICE: [SERVER] Executing query: SELECT * FROM tb0
+2026/01/26 21:56:20 NOTICE: [SERVER] Successfully served 34 rows
