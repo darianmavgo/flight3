@@ -75,8 +75,20 @@ func (rm *RcloneManager) GetVFS(remoteRecord *core.Record) (*vfs.VFS, error) {
 		if err := json.Unmarshal([]byte(v), &config); err != nil {
 			return nil, fmt.Errorf("failed to parse config JSON: %w", err)
 		}
+	case []byte:
+		// Handle types.JSONRaw (which is []byte under the hood)
+		if err := json.Unmarshal(v, &config); err != nil {
+			return nil, fmt.Errorf("failed to parse config JSON from bytes: %w", err)
+		}
 	default:
-		return nil, fmt.Errorf("invalid config type: %T", configData)
+		// Try to marshal and unmarshal as a fallback for types.JSONRaw
+		jsonBytes, err := json.Marshal(configData)
+		if err != nil {
+			return nil, fmt.Errorf("invalid config type: %T", configData)
+		}
+		if err := json.Unmarshal(jsonBytes, &config); err != nil {
+			return nil, fmt.Errorf("failed to parse config JSON from type %T: %w", configData, err)
+		}
 	}
 
 	// Generate hash for this configuration

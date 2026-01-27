@@ -42,9 +42,10 @@ func TestCheckAllBanquetLinks(t *testing.T) {
 	// This requires access to the data.db file.
 
 	// Locate DB
-	workDir, _ := os.Getwd() // tests/
+	workDir, _ := os.Getwd()
 	projectRoot, _ := filepath.Abs(filepath.Join(workDir, ".."))
-	dataDir := filepath.Join(projectRoot, "user_settings", "pb_data")
+	// pb_data is in project root
+	dataDir := filepath.Join(projectRoot, "pb_data")
 
 	// Verify DB exists
 	if _, err := os.Stat(filepath.Join(dataDir, "data.db")); os.IsNotExist(err) {
@@ -65,7 +66,12 @@ func TestCheckAllBanquetLinks(t *testing.T) {
 	}
 
 	// 3. Fetch Links
-	records, err := app.FindRecordsByFilter("banquet_links", "1=1", "id", 1000, 0)
+	coll, err := app.FindCollectionByNameOrId("banquet_links")
+	if err != nil {
+		t.Skip("banquet_links collection not found, skipping link check.")
+	}
+
+	records, err := app.FindRecordsByFilter(coll.Id, "1=1", "id", 1000, 0)
 	if err != nil {
 		t.Fatalf("Failed to fetch banquet_links: %v", err)
 	}

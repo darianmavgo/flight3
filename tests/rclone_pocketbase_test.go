@@ -17,9 +17,10 @@ func TestRclonePocketBaseIntegration(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	// Initialize PocketBase with temp directory
+	// Initialize PocketBase with temp directory pointing to pb_data
+	pbDataDir := filepath.Join(tempDir, "pb_data")
 	app := pocketbase.NewWithConfig(pocketbase.Config{
-		DefaultDataDir: tempDir,
+		DefaultDataDir: pbDataDir,
 	})
 
 	// Bootstrap the app to initialize database
@@ -28,8 +29,8 @@ func TestRclonePocketBaseIntegration(t *testing.T) {
 	}
 	defer app.ResetBootstrapState()
 
-	// Initialize rclone
-	cacheDir := filepath.Join(tempDir, "cache")
+	// Initialize rclone with standard cache path
+	cacheDir := filepath.Join(pbDataDir, "cache")
 	if err := flight.InitRclone(cacheDir); err != nil {
 		t.Fatalf("Failed to initialize rclone: %v", err)
 	}

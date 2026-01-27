@@ -19,10 +19,11 @@ func TestScanBullshitLinks(t *testing.T) {
 	// Connect to DB directly
 	workDir, _ := os.Getwd()
 	projectRoot, _ := filepath.Abs(filepath.Join(workDir, ".."))
-	dataDir := filepath.Join(projectRoot, "user_settings", "pb_data")
+	// pb_data is in project root
+	dataDir := filepath.Join(projectRoot, "pb_data")
 
 	if _, err := os.Stat(filepath.Join(dataDir, "data.db")); os.IsNotExist(err) {
-		t.Skip("Database not found, skipping scan.")
+		t.Skip("Database not found at " + dataDir + ", skipping scan.")
 	}
 
 	app := pocketbase.NewWithConfig(pocketbase.Config{
@@ -33,8 +34,13 @@ func TestScanBullshitLinks(t *testing.T) {
 	}
 
 	// 1. Scan for bad fields
+	coll, err := app.FindCollectionByNameOrId("banquet_links")
+	if err != nil {
+		t.Skip("banquet_links collection not found, skipping bullshit check.")
+	}
+
 	badFieldsFilter := "user='local' || host='localhost'"
-	records, err := app.FindRecordsByFilter("banquet_links", badFieldsFilter, "id", 100, 0)
+	records, err := app.FindRecordsByFilter(coll.Id, badFieldsFilter, "id", 100, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

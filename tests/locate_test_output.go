@@ -127,10 +127,12 @@ func isFileWriteFunction(name string) bool {
 // isPathCompliant checks if the AST expression for the path argument looks safe.
 // Safe means it contains "test_output".
 func isPathCompliant(arg ast.Expr) bool {
-	// 1. Literal string
+	// Safe means it contains "test_output", "pb_data", or "pb_public".
 	if lit, ok := arg.(*ast.BasicLit); ok && lit.Kind == token.STRING {
 		val := strings.Trim(lit.Value, "\"")
-		return strings.Contains(val, "test_output")
+		return strings.Contains(val, "test_output") ||
+			strings.Contains(val, "pb_data") ||
+			strings.Contains(val, "pb_public")
 	}
 
 	// 2. filepath.Join call

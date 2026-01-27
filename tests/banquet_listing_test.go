@@ -16,19 +16,26 @@ func TestBanquetDirectoryListing(t *testing.T) {
 	// 1. Setup Test Environment (Temp Dir & Files)
 	tmpDir := "../test_output/banquet_listing_test"
 	os.RemoveAll(tmpDir)
-	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+
+	pbPublicDir := filepath.Join(tmpDir, "pb_public")
+	pbDataDir := filepath.Join(tmpDir, "pb_data")
+
+	if err := os.MkdirAll(pbPublicDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(pbDataDir, 0755); err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Create some dummy files to "list"
-	os.WriteFile(filepath.Join(tmpDir, "file1.txt"), []byte("content1"), 0644)
-	os.WriteFile(filepath.Join(tmpDir, "file2.csv"), []byte("id,val\n1,A\n2,B"), 0644)
-	os.Mkdir(filepath.Join(tmpDir, "subdir"), 0755)
+	// Create some dummy files in pb_public to "list"
+	os.WriteFile(filepath.Join(pbPublicDir, "file1.txt"), []byte("content1"), 0644)
+	os.WriteFile(filepath.Join(pbPublicDir, "file2.csv"), []byte("id,val\n1,A\n2,B"), 0644)
+	os.Mkdir(filepath.Join(pbPublicDir, "subdir"), 0755)
 
 	// 2. Initialize PocketBase
 	app := pocketbase.NewWithConfig(pocketbase.Config{
-		DefaultDataDir: filepath.Join(tmpDir, "pb_data"),
+		DefaultDataDir: pbDataDir,
 	})
 
 	// Bootstrap to initialize DB
@@ -53,7 +60,7 @@ func TestBanquetDirectoryListing(t *testing.T) {
 		},
 		// My logic flattens config. ensuring 'root' key works for local?
 		// main.go: handled "root" key specially.
-		"root": tmpDir,
+		"root": pbPublicDir,
 	})
 	if err := app.Save(record); err != nil {
 		t.Fatal(err)

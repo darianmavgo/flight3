@@ -39,7 +39,7 @@ func TestFindHTMLAssets(t *testing.T) {
 			if strings.HasPrefix(d.Name(), ".") || d.Name() == "vendor" || d.Name() == "node_modules" || d.Name() == "sample_data" {
 				return filepath.SkipDir
 			}
-			if path == filepath.Join(root, "user_settings", "pb_data", "cache") {
+			if path == filepath.Join(root, "pb_data", "cache") {
 				return filepath.SkipDir
 			}
 		}

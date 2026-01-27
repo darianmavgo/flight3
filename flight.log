@@ -21,3 +21,52 @@ Scheme:
 2026/01/26 21:56:20 NOTICE: [SERVER] Serving from cache: pb_data/cache/local.db
 2026/01/26 21:56:20 NOTICE: [SERVER] Executing query: SELECT * FROM tb0
 2026/01/26 21:56:20 NOTICE: [SERVER] Successfully served 34 rows
+rawurl: sample_data/21mb.csv
+Scheme: 
+  Host:   
+  Path:   sample_data/21mb.csv
+  RawQuery: 
+  Where:      ""
+  Table:      "tb0"
+  Limit:      ""
+2026/01/27 01:08:02 NOTICE: [LOCAL] Handling local dataset: sample_data/21mb.csv
+2026/01/27 01:08:02 NOTICE: [LOCAL] Resolved file path: pb_public/sample_data/21mb.csv
+2026/01/27 01:08:02 NOTICE: [LOCAL] Cache key: sample_data/21mb.csv-local
+2026/01/27 01:08:02 NOTICE: [LOCAL] Cache path: pb_data/cache/sample_data/21mb.csv-local.db
+2026/01/27 01:08:02 NOTICE: [LOCAL] Cache miss or expired, converting local file...
+2026/01/27 01:08:02 NOTICE: [CONVERTER] Converting pb_public/sample_data/21mb.csv -> pb_data/cache/sample_data/21mb.csv-local.db
+2026/01/27 01:08:02 NOTICE: [CONVERTER] Using csv converter
+2026/01/27 01:08:02 NOTICE: [MKSQLITE] Using direct file: pb_data/cache/sample_data/21mb.csv-local.db
+2026/01/27 01:08:02 NOTICE: [MKSQLITE] Starting database population...
+2026/01/27 01:08:02 NOTICE: [MKSQLITE] Creating table: tb0 with headers: [id name email address phone]
+2026/01/27 01:08:03 NOTICE: [MKSQLITE] Finished table tb0, total rows: 388042
+2026/01/27 01:08:03 NOTICE: [MKSQLITE] Conversion completed successfully.
+2026/01/27 01:08:03 NOTICE: [CONVERTER] Conversion successful
+2026/01/27 01:08:03 NOTICE: [LOCAL] File/Directory converted successfully
+2026/01/27 01:08:03 NOTICE: [SERVER] Serving from cache: pb_data/cache/sample_data/21mb.csv-local.db
+2026/01/27 01:08:03 NOTICE: [SERVER] Executing query: SELECT * FROM tb0
+2026/01/27 01:10:31 NOTICE: [SERVER] Successfully served 388042 rows
+rawurl: sample_data/
+Scheme: 
+  Host:   
+  Path:   sample_data/
+  RawQuery: 
+  Where:      ""
+  Table:      "sample_data"
+  Limit:      ""
+2026/01/27 01:45:47 NOTICE: [LOCAL] Handling local dataset: sample_data/
+2026/01/27 01:45:47 NOTICE: [LOCAL] Resolved file path: pb_public/sample_data
+2026/01/27 01:45:47 NOTICE: [LOCAL] Cache key: sample_data/-local
+2026/01/27 01:45:47 NOTICE: [LOCAL] Cache path: pb_data/cache/sample_data/-local.db
+2026/01/27 01:45:47 NOTICE: [LOCAL] Cache miss or expired, converting local file...
+2026/01/27 01:45:47 NOTICE: [CONVERTER] Converting pb_public/sample_data -> pb_data/cache/sample_data/-local.db
+2026/01/27 01:45:47 NOTICE: [CONVERTER] Using filesystem converter for directory
+2026/01/27 01:45:47 NOTICE: [MKSQLITE] Using direct file: pb_data/cache/sample_data/-local.db
+2026/01/27 01:45:47 NOTICE: [MKSQLITE] Starting database population...
+2026/01/27 01:45:47 NOTICE: [MKSQLITE] Creating table: tb0 with headers: [path name size extension mod_time is_dir]
+2026/01/27 01:45:47 NOTICE: [MKSQLITE] Finished table tb0, total rows: 33
+2026/01/27 01:45:47 NOTICE: [MKSQLITE] Conversion completed successfully.
+2026/01/27 01:45:47 NOTICE: [CONVERTER] Conversion successful
+2026/01/27 01:45:47 NOTICE: [LOCAL] File/Directory converted successfully
+2026/01/27 01:45:47 NOTICE: [SERVER] Serving from cache: pb_data/cache/sample_data/-local.db
+2026/01/27 01:45:47 NOTICE: [SERVER] Executing query: SELECT * FROM sample_data
