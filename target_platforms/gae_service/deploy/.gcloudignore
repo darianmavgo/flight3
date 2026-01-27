@@ -1,0 +1,22 @@
+# Ignore development files
+.git
+.gitignore
+*.log
+pb_data/
+logs/
+test_output/
+tests/
+
+# Ignore build artifacts
+bin/
+builds/
+*.exe
+*.dmg
+*.deb
+*.zip
+*.tar.gz
+
+# Ignore local development
+.DS_Store
+*.swp
+*~

@@ -1,0 +1,20 @@
+Package: flight3
+Version: 1.0.0
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: darianmavgo <dev@darianmavgo.com>
+Description: Flight3 - Enhanced Data Serving Platform
+ Flight3 is a modern data serving application that integrates PocketBase,
+ Rclone, Banquet, and SQLiter to provide a powerful, flexible, and
+ user-friendly interface for accessing and visualizing data from various
+ cloud storage sources.
+ .
+ Features:
+  - Multi-cloud data access (S3, GCS, R2, and 40+ providers)
+  - Dynamic configuration via PocketBase Admin UI
+  - Intelligent caching with TTL support
+  - SQL-like querying via URL parameters
+  - Automatic file format conversion (CSV, Excel, JSON → SQLite)
+Depends: libc6 (>= 2.14)
+Homepage: https://github.com/darianmavgo/flight3

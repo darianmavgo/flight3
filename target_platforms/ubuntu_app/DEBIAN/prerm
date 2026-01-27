@@ -1,0 +1,12 @@
+#!/bin/bash
+set -e
+
+# Pre-removal script for Flight3 Debian package
+
+# Stop service if running
+if command -v systemctl > /dev/null 2>&1; then
+    systemctl stop flight3 2>/dev/null || true
+    systemctl disable flight3 2>/dev/null || true
+fi
+
+exit 0

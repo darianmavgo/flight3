@@ -1,0 +1,32 @@
+#!/bin/bash
+set -e
+
+# Post-installation script for Flight3 Debian package
+
+echo "Configuring Flight3..."
+
+# Create flight3 user if it doesn't exist
+if ! id -u flight3 > /dev/null 2>&1; then
+    useradd -r -s /bin/false -d /opt/flight3 flight3
+fi
+
+# Create necessary directories
+mkdir -p /opt/flight3/{pb_data,logs}
+
+# Set ownership
+chown -R flight3:flight3 /opt/flight3
+
+# Reload systemd if available
+if command -v systemctl > /dev/null 2>&1; then
+    systemctl daemon-reload
+fi
+
+echo "Flight3 installed successfully!"
+echo ""
+echo "To start Flight3:"
+echo "  sudo systemctl start flight3"
+echo ""
+echo "To enable at boot:"
+echo "  sudo systemctl enable flight3"
+echo ""
+echo "Access the admin UI at: http://localhost:8090/_/"

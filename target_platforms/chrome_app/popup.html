@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Flight3</title>
+    <style>
+        body {
+            width: 400px;
+            padding: 20px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        h1 {
+            font-size: 24px;
+            margin: 0 0 10px 0;
+        }
+        p {
+            margin: 5px 0;
+            opacity: 0.9;
+        }
+        .status {
+            background: rgba(255,255,255,0.2);
+            padding: 10px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        button {
+            background: white;
+            color: #667eea;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            width: 100%;
+            margin-top: 10px;
+        }
+        button:hover {
+            background: #f0f0f0;
+        }
+        a {
+            color: white;
+            text-decoration: none;
+            display: block;
+            margin-top: 10px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <h1>Flight3 Data Viewer</h1>
+    <p>Multi-cloud data access platform</p>
+    
+    <div class="status" id="status">
+        <p>Server Status: <span id="server-status">Checking...</span></p>
+    </div>
+    
+    <button id="open-admin">Open Admin UI</button>
+    <button id="open-data">Browse Data</button>
+    
+    <a href="#" id="docs-link">Documentation</a>
+    
+    <script src="popup.js"></script>
+</body>
+</html>

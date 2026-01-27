@@ -1,0 +1,32 @@
+[Unit]
+Description=Flight3 Data Serving Platform
+Documentation=https://github.com/darianmavgo/flight3
+After=network.target
+
+[Service]
+Type=simple
+User=flight3
+Group=flight3
+WorkingDirectory=/opt/flight3
+ExecStart=/usr/local/bin/flight3 serve --http=0.0.0.0:8090
+Restart=always
+RestartSec=10
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/flight3/pb_data /opt/flight3/logs
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=flight3
+
+# Environment
+Environment="FLIGHT3_DATA_DIR=/opt/flight3/pb_data"
+Environment="FLIGHT3_LOG_DIR=/opt/flight3/logs"
+
+[Install]
+WantedBy=multi-user.target
