@@ -50,32 +50,41 @@ func Install() error {
 	// Determine installation paths based on OS
 	var binPath, dataPath string
 
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	// Try to find GOPATH/bin or fallback to ~/go/bin
+	goPath := os.Getenv("GOPATH")
+	if goPath == "" {
+		goPath = filepath.Join(homeDir, "go")
+	}
+	binDir := filepath.Join(goPath, "bin")
+
+	// Create bin dir if it doesn't exist
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		return fmt.Errorf("failed to create bin directory: %w", err)
+	}
+
+	binPath = filepath.Join(binDir, "flight")
+
 	if runtime.GOOS == "darwin" {
-		// macOS conventional paths
-		binPath = "/usr/local/bin/flight"
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("failed to get home directory: %w", err)
-		}
+		// macOS conventional data path (user-local)
 		dataPath = filepath.Join(homeDir, "Library", "Application Support", "Flight3")
 	} else {
-		// Linux/Unix conventional paths
-		binPath = "/usr/local/bin/flight"
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("failed to get home directory: %w", err)
-		}
+		// Linux/Unix conventional data path
 		dataPath = filepath.Join(homeDir, ".local", "share", "flight3")
 	}
 
-	// Install binary
+	// Install binary (no sudo needed for user folders)
 	fmt.Printf("  Installing binary to: %s\n", binPath)
-	if err := sh.Run("sudo", "cp", "flight", binPath); err != nil {
-		return fmt.Errorf("failed to install binary (may need sudo): %w", err)
+	if err := sh.Run("cp", "flight", binPath); err != nil {
+		return fmt.Errorf("failed to install binary: %w", err)
 	}
 
 	// Make binary executable
-	if err := sh.Run("sudo", "chmod", "+x", binPath); err != nil {
+	if err := sh.Run("chmod", "+x", binPath); err != nil {
 		return fmt.Errorf("failed to make binary executable: %w", err)
 	}
 
@@ -135,27 +144,28 @@ func Install() error {
 func Uninstall() error {
 	fmt.Println("🗑️  Uninstalling Flight3...")
 
+	// Determine paths matches Install
 	var binPath, dataPath string
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	goPath := os.Getenv("GOPATH")
+	if goPath == "" {
+		goPath = filepath.Join(homeDir, "go")
+	}
+	binPath = filepath.Join(goPath, "bin", "flight")
 
 	if runtime.GOOS == "darwin" {
-		binPath = "/usr/local/bin/flight"
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return err
-		}
 		dataPath = filepath.Join(homeDir, "Library", "Application Support", "Flight3")
 	} else {
-		binPath = "/usr/local/bin/flight"
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return err
-		}
 		dataPath = filepath.Join(homeDir, ".local", "share", "flight3")
 	}
 
 	// Remove binary
 	fmt.Printf("  Removing binary: %s\n", binPath)
-	if err := sh.Run("sudo", "rm", "-f", binPath); err != nil {
+	if err := os.Remove(binPath); err != nil {
 		fmt.Printf("  Warning: failed to remove binary: %v\n", err)
 	}
 
@@ -245,34 +255,43 @@ func Launch() error {
 
 	fmt.Println("🚀 Launching flight and opening Chrome...")
 
-	// Find a free port
-	listener, err := net.Listen("tcp", "[::1]:0")
-	if err != nil {
-		// Try IPv4 if IPv6 fails
-		listener, err = net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			return fmt.Errorf("failed to find free port: %w", err)
+	var listener net.Listener
+	var err error
+	var port int
+
+	// 1. Try sticky ports (8090-8099)
+	for p := 8090; p <= 8099; p++ {
+		addr := fmt.Sprintf("127.0.0.1:%d", p)
+		listener, err = net.Listen("tcp", addr)
+		if err == nil {
+			port = p
+			break
 		}
+		// Try IPv6 if IPv4 failed?? usually 127.0.0.1 is safer for loops.
+		// If 127.0.0.1 failed, port is likely busy.
 	}
-	port := listener.Addr().(*net.TCPAddr).Port
+
+	// 2. Fallback to random free port if sticky ports failed
+	if listener == nil {
+		fmt.Println("⚠️  Preferred ports 8090-8099 are busy, falling back to random port.")
+		listener, err = net.Listen("tcp", "[::1]:0")
+		if err != nil {
+			// Try IPv4 if IPv6 fails
+			listener, err = net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				return fmt.Errorf("failed to find free port: %w", err)
+			}
+		}
+		port = listener.Addr().(*net.TCPAddr).Port
+	}
+
 	listener.Close() // Close it so the server can use it
 
-	addr := fmt.Sprintf(":%d", port)
-	if len(addr) > 0 && addr[0] == ':' {
-		// If using [::1] or 127.0.0.1 explicitly might be better for the server argument
-		// flight.go mostly cares about the string passed to --http
-		// Let's match the listener host
-		host := listener.Addr().(*net.TCPAddr).IP.String()
-		addr = fmt.Sprintf("%s:%d", host, port)
-		// Handle IPv6 brackets if needed
-		if len(host) > 0 && host == "::1" {
-			addr = fmt.Sprintf("[%s]:%d", host, port)
-		}
-	}
+	// Determine address string for Flight
+	addr := fmt.Sprintf("127.0.0.1:%d", port) // Default to IPv4 localhost for stability
 
-	url := fmt.Sprintf("http://%s", addr)
-	// If it's the wildcard or [::1], we want a clickable URL usually localhost or [::1]
-	// Chrome handles [::1] fine.
+	// Create Launch URL
+	url := fmt.Sprintf("http://localhost:%d", port) // localhost implies 127.0.0.1 usuallly
 
 	fmt.Printf("\n🔗 App URL: %s\n\n", url)
 
