@@ -104,13 +104,21 @@ func Install() error {
 	}
 
 	// Copy any existing data if present
-	if _, err := os.Stat("pb_data"); err == nil {
-		fmt.Println("  Copying existing pb_data...")
-		if err := sh.Run("cp", "-r", "pb_data/.", filepath.Join(dataPath, "pb_data")); err != nil {
-			fmt.Printf("  Warning: failed to copy pb_data: %v\n", err)
-		}
+	// Copy pb_data only if it doesn't exist in destination (preserve user data)
+	destPbData := filepath.Join(dataPath, "pb_data")
+	destDataDB := filepath.Join(destPbData, "data.db")
+	if _, err := os.Stat(destDataDB); err == nil {
+		fmt.Printf("  ⚠️  Destination 'pb_data/data.db' exists in %s, skipping data overwrite.\n", destPbData)
 	} else {
-		fmt.Println("  ⚠️  Source 'pb_data' not found, skipping data copy.")
+		// Destination doesn't exist or is empty, copy from source if present
+		if _, err := os.Stat("pb_data"); err == nil {
+			fmt.Println("  Copying initial pb_data...")
+			if err := sh.Run("cp", "-r", "pb_data/.", destPbData); err != nil {
+				fmt.Printf("  Warning: failed to copy pb_data: %v\n", err)
+			}
+		} else {
+			fmt.Println("  ⚠️  Source 'pb_data' not found, skipping data copy.")
+		}
 	}
 
 	if _, err := os.Stat("pb_public"); err == nil {

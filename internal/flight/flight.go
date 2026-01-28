@@ -148,6 +148,9 @@ func Flight() {
 		se.Router.DELETE("/_/rclone_config/api/remotes/{id}", HandleDeleteRemote)
 		se.Router.POST("/_/rclone_config/api/test", HandleTestRemote)
 
+		// Register auto-login handler
+		se.Router.GET("/api/auto_login", HandleAutoLogin)
+
 		// Register root path handler
 		se.Router.Any("/", banquetHandler)
 
@@ -159,7 +162,8 @@ func Flight() {
 			go func() {
 				// Give the server a moment to bind and start listening
 				time.Sleep(1 * time.Second)
-				url := "http://" + httpAddr
+				// Use auto-login route to ensure user is authenticated
+				url := "http://" + httpAddr + "/api/auto_login"
 				log.Printf("[SILICON] Enjoying Flight3: Launching Google Chrome to %s", url)
 				err := exec.Command("open", "-a", "Google Chrome", url).Start()
 				if err != nil {

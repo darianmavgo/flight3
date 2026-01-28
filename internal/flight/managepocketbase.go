@@ -154,9 +154,9 @@ func EnsurePipelineCache(app core.App, cacheKey string, remote *core.Record, rem
 }
 
 func EnsureSuperUser(app core.App, email, password string) error {
-	superuser, err := app.FindAuthRecordByEmail("_superusers", email)
+	superuser, err := app.FindAuthRecordByEmail(core.CollectionNameSuperusers, email)
 	if err != nil {
-		collection, err := app.FindCollectionByNameOrId("_superusers")
+		collection, err := app.FindCollectionByNameOrId(core.CollectionNameSuperusers)
 		if err != nil {
 			return err
 		}

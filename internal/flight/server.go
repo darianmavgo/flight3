@@ -48,8 +48,8 @@ func ServeFromCache(cachePath string, b *banquet.Banquet, tw *sqliter.TableWrite
 	}
 
 	// Create one-liner Banquet debug info
-	banquetDebug := fmt.Sprintf("Banquet{Scheme:%q Host:%q Path:%q Table:%q Where:%q Limit:%q Offset:%q} DB:%q",
-		b.Scheme, b.Host, b.Path, b.Table, b.Where, b.Limit, b.Offset, cachePath)
+	banquetDebug := fmt.Sprintf("Banquet{Scheme:%q Host:%q Path:%q DataSetPath:%q Table:%q Select:%v Where:%q GroupBy:%q Having:%q OrderBy:%q SortDirection:%q Limit:%q Offset:%q} DB:%q",
+		b.Scheme, b.Host, b.Path, b.DataSetPath, b.Table, b.Select, b.Where, b.GroupBy, b.Having, b.OrderBy, b.SortDirection, b.Limit, b.Offset, cachePath)
 
 	tw.StartHTMLTableWithDebug(e.Response, columns, title, banquetDebug, query)
 
