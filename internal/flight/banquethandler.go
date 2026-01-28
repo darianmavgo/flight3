@@ -39,7 +39,7 @@ func HandleBanquet(e *core.RequestEvent, tw *sqliter.TableWriter, tpl *template.
 	b, err := banquet.ParseNested(reqURI)
 	if err != nil {
 		log.Printf("[BANQUET] Invalid banquet URL: %s", reqURI)
-		return err
+		return NewBanquetError(err, "Invalid banquet URL format", 400, nil, "")
 	}
 
 	if verbose {
@@ -52,23 +52,22 @@ func HandleBanquet(e *core.RequestEvent, tw *sqliter.TableWriter, tpl *template.
 	// 2. Lookup Remote Configuration
 	remoteRecord, err := LookupRemote(e.App, b.Hostname())
 	if err != nil {
-		return fmt.Errorf("remote not found: %w", err)
+		return NewBanquetError(err, fmt.Sprintf("Remote '%s' not found", b.Hostname()), 404, b, "")
 	}
 
 	// 3. Initialize VFS
 	rcloneManager := GetRcloneManager()
 	if rcloneManager == nil {
-		return fmt.Errorf("rclone manager not initialized")
+		return NewBanquetError(nil, "Rclone manager not initialized", 500, b, "")
 	}
 
 	vfs, err := rcloneManager.GetVFS(remoteRecord)
 	if err != nil {
-		return fmt.Errorf("failed to init VFS: %w", err)
+		return NewBanquetError(err, "Failed to initialize VFS", 500, b, "")
 	}
 
 	// 4. Generate Cache Key
-	remoteConfigHash := rcloneManager.GetConfigHash(remoteRecord)
-	cacheKey := GenCacheKey(b, remoteConfigHash)
+	cacheKey := GenCacheKey(b)
 	cachePath := GetCachePath(e.App.DataDir(), cacheKey)
 
 	if verbose {
@@ -94,13 +93,13 @@ func HandleBanquet(e *core.RequestEvent, tw *sqliter.TableWriter, tpl *template.
 		// Check if it's a directory or a file
 		node, err := rcloneManager.Stat(vfs, b.DataSetPath)
 		if err != nil {
-			return fmt.Errorf("failed to stat remote path: %w", err)
+			return NewBanquetError(err, fmt.Sprintf("Failed to access remote path: %s", b.DataSetPath), 404, b, "")
 		}
 
 		if node.IsDir() {
 			// Remote directory - index it
 			if err := rcloneManager.IndexDirectory(vfs, b.DataSetPath, cachePath); err != nil {
-				return fmt.Errorf("failed to index remote directory: %w", err)
+				return NewBanquetError(err, "Failed to index remote directory", 500, b, "")
 			}
 			// When indexing a directory, the resulting table name in the cache is always 'tb0'
 			b.Table = "tb0"
@@ -108,18 +107,18 @@ func HandleBanquet(e *core.RequestEvent, tw *sqliter.TableWriter, tpl *template.
 			// Remote file - fetch and convert
 			tempDir := filepath.Join(e.App.DataDir(), "temp")
 			if err := os.MkdirAll(tempDir, 0755); err != nil {
-				return fmt.Errorf("failed to create temp directory: %w", err)
+				return NewBanquetError(err, "Failed to create temp directory", 500, b, "")
 			}
 
 			rawFilePath := filepath.Join(tempDir, cacheKey+filepath.Ext(b.DataSetPath))
 			if err := rcloneManager.FetchFile(vfs, b.DataSetPath, rawFilePath); err != nil {
-				return fmt.Errorf("failed to fetch file: %w", err)
+				return NewBanquetError(err, fmt.Sprintf("Failed to fetch file: %s", b.DataSetPath), 500, b, "")
 			}
 
 			// 6b. Convert to SQLite using mksqlite
 			if err := ConvertToSQLite(rawFilePath, cachePath); err != nil {
 				os.Remove(rawFilePath) // Cleanup on error
-				return fmt.Errorf("failed to convert to SQLite: %w", err)
+				return NewBanquetError(err, "Failed to convert file to SQLite", 500, b, "")
 			}
 
 			// 6c. Cleanup temp file
@@ -174,16 +173,16 @@ func HandleLocalDataset(e *core.RequestEvent, b *banquet.Banquet, tw *sqliter.Ta
 	}
 
 	// 2. Check if file exists
-	_, err := os.Stat(localFilePath)
+	fileInfo, err := os.Stat(localFilePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("local file not found: %s", localFilePath)
+			return NewBanquetError(err, fmt.Sprintf("Local file not found: %s", b.DataSetPath), 404, b, "")
 		}
-		return fmt.Errorf("error accessing local file: %w", err)
+		return NewBanquetError(err, "Error accessing local file", 500, b, "")
 	}
 
-	// 3. Generate Cache Key (use "local" as the config hash)
-	cacheKey := GenCacheKey(b, "local")
+	// 3. Generate Cache Key
+	cacheKey := GenCacheKey(b)
 	cachePath := GetCachePath(e.App.DataDir(), cacheKey)
 
 	if verbose {
@@ -209,8 +208,8 @@ func HandleLocalDataset(e *core.RequestEvent, b *banquet.Banquet, tw *sqliter.Ta
 		sourceInfo, _ := os.Stat(localFilePath)
 		if sourceInfo != nil {
 			cacheInfo, err := os.Stat(cachePath)
-			if err == nil && cacheInfo.ModTime().After(sourceInfo.ModTime()) {
-				// Cache is newer than source, use it
+			if err == nil && cacheInfo.Size() > 0 && cacheInfo.ModTime().After(sourceInfo.ModTime()) {
+				// Cache is newer than source and not empty, use it
 				valid = true
 				if verbose {
 					log.Printf("[LOCAL] Cache is newer than source file, using cache")
@@ -221,7 +220,7 @@ func HandleLocalDataset(e *core.RequestEvent, b *banquet.Banquet, tw *sqliter.Ta
 		if !valid {
 			// Convert to SQLite (File or Directory)
 			if err := ConvertToSQLite(localFilePath, cachePath); err != nil {
-				return fmt.Errorf("failed to convert local file/directory to SQLite: %w", err)
+				return NewBanquetError(err, "Failed to convert local file/directory to SQLite", 500, b, "")
 			}
 
 			if verbose {

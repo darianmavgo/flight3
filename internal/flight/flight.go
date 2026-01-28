@@ -17,6 +17,31 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
+// getDataDirectory determines the appropriate data directory
+// Priority: 1. Conventional location if exists, 2. Current directory
+func getDataDirectory() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "./pb_data" // Fallback to current directory
+	}
+
+	var conventionalPath string
+	if runtime.GOOS == "darwin" {
+		conventionalPath = filepath.Join(homeDir, "Library", "Application Support", "Flight3")
+	} else {
+		conventionalPath = filepath.Join(homeDir, ".local", "share", "flight3")
+	}
+
+	// Check if conventional path exists and has pb_data subdirectory
+	pbDataPath := filepath.Join(conventionalPath, "pb_data")
+	if _, err := os.Stat(pbDataPath); err == nil {
+		return pbDataPath
+	}
+
+	// Fallback to current directory
+	return "./pb_data"
+}
+
 func Flight() {
 
 	// Default to "serve" command if no arguments are provided
@@ -49,7 +74,16 @@ func Flight() {
 		}
 	}
 
-	app := pocketbase.New()
+	// Determine data directory
+	// Priority: 1. Conventional location if exists, 2. Current directory
+	dataDir := getDataDirectory()
+
+	// Create PocketBase app with custom data directory
+	app := pocketbase.NewWithConfig(pocketbase.Config{
+		DefaultDataDir: dataDir,
+	})
+
+	log.Printf("Using data directory: %s", app.DataDir())
 
 	// Initialize SQLiter with Embedded Templates
 	// We use the templates embedded in the sqliter library.
@@ -96,8 +130,12 @@ func Flight() {
 				return e.Next()
 			}
 
-			// Pass to BanquetHandler
-			return HandleBanquet(e, tw, tpl, true)
+			// Pass to BanquetHandler and handle errors
+			err := HandleBanquet(e, tw, tpl, true)
+			if err != nil {
+				return HandleBanquetError(e, err)
+			}
+			return nil
 		}
 
 		// Rclone config UI and API routes (must be before catch-all)

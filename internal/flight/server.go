@@ -20,7 +20,7 @@ func ServeFromCache(cachePath string, b *banquet.Banquet, tw *sqliter.TableWrite
 	// Open SQLite database
 	db, err := sql.Open("sqlite", cachePath)
 	if err != nil {
-		return fmt.Errorf("failed to open cache database: %w", err)
+		return NewBanquetError(err, "Failed to open cache database", 500, b, "")
 	}
 	defer db.Close()
 
@@ -31,22 +31,48 @@ func ServeFromCache(cachePath string, b *banquet.Banquet, tw *sqliter.TableWrite
 	// Execute query
 	rows, err := db.Query(query)
 	if err != nil {
-		return fmt.Errorf("query execution failed: %w", err)
+		return NewBanquetError(err, "Query execution failed", 400, b, query)
 	}
 	defer rows.Close()
 
 	// Get column names
 	columns, err := rows.Columns()
 	if err != nil {
-		return fmt.Errorf("failed to get columns: %w", err)
+		return NewBanquetError(err, "Failed to get columns", 500, b, query)
 	}
 
-	// Start HTML table
+	// Start HTML table with debug info
 	title := b.DataSetPath
 	if b.Table != "" {
 		title = b.Table
 	}
-	tw.StartHTMLTable(e.Response, columns, title)
+
+	// Create one-liner Banquet debug info
+	banquetDebug := fmt.Sprintf("Banquet{Scheme:%q Host:%q Path:%q Table:%q Where:%q Limit:%q Offset:%q}",
+		b.Scheme, b.Host, b.Path, b.Table, b.Where, b.Limit, b.Offset)
+
+	tw.StartHTMLTableWithDebug(e.Response, columns, title, banquetDebug, query)
+
+	// Determine if this looks like a directory listing or a table listing
+	isDirListing := false
+	isSqliteMaster := b.Table == "sqlite_master"
+	nameIdx := -1
+	pathIdx := -1
+	typeIdx := -1
+	for i, col := range columns {
+		if col == "name" {
+			nameIdx = i
+		}
+		if col == "path" {
+			pathIdx = i
+		}
+		if col == "is_dir" {
+			isDirListing = true
+		}
+		if col == "type" {
+			typeIdx = i
+		}
+	}
 
 	// Write rows
 	rowIndex := 0
@@ -67,27 +93,6 @@ func ServeFromCache(cachePath string, b *banquet.Banquet, tw *sqliter.TableWrite
 		// Convert to strings
 		cells := make([]string, len(columns))
 
-		// Check if this looks like a directory listing or a table listing
-		isDirListing := false
-		isSqliteMaster := b.Table == "sqlite_master"
-		nameIdx := -1
-		pathIdx := -1
-		typeIdx := -1
-		for i, col := range columns {
-			if col == "name" {
-				nameIdx = i
-			}
-			if col == "path" {
-				pathIdx = i
-			}
-			if col == "is_dir" {
-				isDirListing = true
-			}
-			if col == "type" {
-				typeIdx = i
-			}
-		}
-
 		for i, val := range values {
 			rawVal := ""
 			if val != nil {
@@ -104,14 +109,11 @@ func ServeFromCache(cachePath string, b *banquet.Banquet, tw *sqliter.TableWrite
 
 				// Determine if it's a directory row
 				isDirRow := false
-				if isDirListing {
-					// In some converters is_dir might be missing per row but present in columns
-					// Look for 'is_dir' column in current row values
-					for j, col := range columns {
-						if col == "is_dir" && values[j] != nil {
-							isDirRow = fmt.Sprintf("%v", values[j]) == "1" || fmt.Sprintf("%v", values[j]) == "true"
-							break
-						}
+				// Look for 'is_dir' column in current row values
+				for j, col := range columns {
+					if col == "is_dir" && values[j] != nil {
+						isDirRow = fmt.Sprintf("%v", values[j]) == "1" || fmt.Sprintf("%v", values[j]) == "true"
+						break
 					}
 				}
 

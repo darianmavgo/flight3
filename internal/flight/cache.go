@@ -9,16 +9,15 @@ import (
 	"github.com/darianmavgo/banquet"
 )
 
-// GenCacheKey generates a cache key based on the banquet request and remote config.
-// The auth alias "b.User" might matter for disambiguation.
+// GenCacheKey generates a cache key based on the banquet request.
+// The auth alias "b.User" already contains config hash for disambiguation.
 // Deliberately not including scheme since file could be pulled via s3 or https in some situations.
-// Includes remoteConfigHash to ensure cache isolation per credential set.
-func GenCacheKey(b *banquet.Banquet, remoteConfigHash string) string {
+func GenCacheKey(b *banquet.Banquet) string {
 	userInfo := ""
 	if b.User != nil {
 		userInfo = b.User.String()
 	}
-	parts := []string{userInfo, b.Hostname(), b.DataSetPath, remoteConfigHash}
+	parts := []string{userInfo, b.Hostname(), b.DataSetPath}
 	// Filter out empty parts
 	var filtered []string
 	for _, p := range parts {
@@ -26,7 +25,13 @@ func GenCacheKey(b *banquet.Banquet, remoteConfigHash string) string {
 			filtered = append(filtered, p)
 		}
 	}
-	return strings.Join(filtered, "-")
+	key := strings.Join(filtered, "-")
+	// Replace slashes with underscores to keep a flat file structure
+	key = strings.ReplaceAll(key, "/", "_")
+	// Also clean up any double underscores or double dashes
+	key = strings.ReplaceAll(key, "--", "-")
+	key = strings.ReplaceAll(key, "__", "_")
+	return key
 }
 
 // ValidateCache checks if cached SQLite file is still valid based on TTL
@@ -49,6 +54,11 @@ func ValidateCache(cachePath string, ttlMinutes float64) (bool, error) {
 	// Check if still valid
 	if age > ttlMinutes {
 		return false, nil // Cache expired
+	}
+
+	// Double check: if file is 0 bytes, it's definitely not a valid SQLite DB
+	if info.Size() == 0 {
+		return false, nil
 	}
 
 	return true, nil // Cache is valid
