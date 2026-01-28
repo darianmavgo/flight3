@@ -39,7 +39,7 @@ func HandleBanquet(e *core.RequestEvent, tw *sqliter.TableWriter, tpl *template.
 	b, err := banquet.ParseNested(reqURI)
 	if err != nil {
 		log.Printf("[BANQUET] Invalid banquet URL: %s", reqURI)
-		return NewBanquetError(err, "Invalid banquet URL format", 400, nil, "")
+		return NewBanquetError(err, "Invalid banquet URL format", 400, nil, "", "")
 	}
 
 	if verbose {
@@ -52,18 +52,18 @@ func HandleBanquet(e *core.RequestEvent, tw *sqliter.TableWriter, tpl *template.
 	// 2. Lookup Remote Configuration
 	remoteRecord, err := LookupRemote(e.App, b.Hostname())
 	if err != nil {
-		return NewBanquetError(err, fmt.Sprintf("Remote '%s' not found", b.Hostname()), 404, b, "")
+		return NewBanquetError(err, fmt.Sprintf("Remote '%s' not found", b.Hostname()), 404, b, "", "")
 	}
 
 	// 3. Initialize VFS
 	rcloneManager := GetRcloneManager()
 	if rcloneManager == nil {
-		return NewBanquetError(nil, "Rclone manager not initialized", 500, b, "")
+		return NewBanquetError(nil, "Rclone manager not initialized", 500, b, "", "")
 	}
 
 	vfs, err := rcloneManager.GetVFS(remoteRecord)
 	if err != nil {
-		return NewBanquetError(err, "Failed to initialize VFS", 500, b, "")
+		return NewBanquetError(err, "Failed to initialize VFS", 500, b, "", "")
 	}
 
 	// 4. Generate Cache Key
@@ -93,13 +93,13 @@ func HandleBanquet(e *core.RequestEvent, tw *sqliter.TableWriter, tpl *template.
 		// Check if it's a directory or a file
 		node, err := rcloneManager.Stat(vfs, b.DataSetPath)
 		if err != nil {
-			return NewBanquetError(err, fmt.Sprintf("Failed to access remote path: %s", b.DataSetPath), 404, b, "")
+			return NewBanquetError(err, fmt.Sprintf("Failed to access remote path: %s", b.DataSetPath), 404, b, "", "")
 		}
 
 		if node.IsDir() {
 			// Remote directory - index it
 			if err := rcloneManager.IndexDirectory(vfs, b.DataSetPath, cachePath); err != nil {
-				return NewBanquetError(err, "Failed to index remote directory", 500, b, "")
+				return NewBanquetError(err, "Failed to index remote directory", 500, b, "", cachePath)
 			}
 			// When indexing a directory, the resulting table name in the cache is always 'tb0'
 			b.Table = "tb0"
@@ -107,18 +107,18 @@ func HandleBanquet(e *core.RequestEvent, tw *sqliter.TableWriter, tpl *template.
 			// Remote file - fetch and convert
 			tempDir := filepath.Join(e.App.DataDir(), "temp")
 			if err := os.MkdirAll(tempDir, 0755); err != nil {
-				return NewBanquetError(err, "Failed to create temp directory", 500, b, "")
+				return NewBanquetError(err, "Failed to create temp directory", 500, b, "", cachePath)
 			}
 
 			rawFilePath := filepath.Join(tempDir, cacheKey+filepath.Ext(b.DataSetPath))
 			if err := rcloneManager.FetchFile(vfs, b.DataSetPath, rawFilePath); err != nil {
-				return NewBanquetError(err, fmt.Sprintf("Failed to fetch file: %s", b.DataSetPath), 500, b, "")
+				return NewBanquetError(err, fmt.Sprintf("Failed to fetch file: %s", b.DataSetPath), 500, b, "", cachePath)
 			}
 
 			// 6b. Convert to SQLite using mksqlite
 			if err := ConvertToSQLite(rawFilePath, cachePath); err != nil {
 				os.Remove(rawFilePath) // Cleanup on error
-				return NewBanquetError(err, "Failed to convert file to SQLite", 500, b, "")
+				return NewBanquetError(err, "Failed to convert file to SQLite", 500, b, "", cachePath)
 			}
 
 			// 6c. Cleanup temp file
@@ -152,17 +152,46 @@ func HandleLocalDataset(e *core.RequestEvent, b *banquet.Banquet, tw *sqliter.Ta
 	}
 
 	// 1. Resolve local file path
-	// DataSetPath should be relative to pb_public or an absolute path
+	// Look up serve_folder in app_settings
+	baseDir := filepath.Join(e.App.DataDir(), "..", "pb_public") // Default
+
+	// Try to find serve_folder setting - dynamic lookup prevents restart requirement
+	if record, err := e.App.FindFirstRecordByData("app_settings", "key", "serve_folder"); err == nil && record != nil {
+		if val := record.GetString("value"); val != "" {
+			// Expand home directory ~
+			if strings.HasPrefix(val, "~/") || val == "~" {
+				if homeDir, err := os.UserHomeDir(); err == nil {
+					if val == "~" {
+						val = homeDir
+					} else {
+						val = filepath.Join(homeDir, val[2:])
+					}
+				}
+			}
+
+			if filepath.IsAbs(val) {
+				baseDir = val
+			} else {
+				// Treat relative paths as relative to the application root (parent of pb_data)
+				baseDir = filepath.Join(e.App.DataDir(), "..", val)
+			}
+			if verbose {
+				log.Printf("[LOCAL] Using configured serve_folder: %s", baseDir)
+			}
+		}
+	}
+
+	// DataSetPath should be relative to baseDir or an absolute path
 	var localFilePath string
 
 	// Handle empty path (root request)
 	if b.DataSetPath == "" || b.DataSetPath == "/" {
-		localFilePath = filepath.Join(e.App.DataDir(), "..", "pb_public")
+		localFilePath = baseDir
 	} else if filepath.IsAbs(b.DataSetPath) {
 		localFilePath = b.DataSetPath
 	} else {
-		// Relative to pb_public directory
-		localFilePath = filepath.Join(e.App.DataDir(), "..", "pb_public", b.DataSetPath)
+		// Relative to base directory
+		localFilePath = filepath.Join(baseDir, b.DataSetPath)
 	}
 
 	// Clean the path
@@ -176,9 +205,9 @@ func HandleLocalDataset(e *core.RequestEvent, b *banquet.Banquet, tw *sqliter.Ta
 	fileInfo, err := os.Stat(localFilePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return NewBanquetError(err, fmt.Sprintf("Local file not found: %s", b.DataSetPath), 404, b, "")
+			return NewBanquetError(err, fmt.Sprintf("Local file not found: %s", b.DataSetPath), 404, b, "", "")
 		}
-		return NewBanquetError(err, "Error accessing local file", 500, b, "")
+		return NewBanquetError(err, "Error accessing local file", 500, b, "", "")
 	}
 
 	// 3. Generate Cache Key
@@ -220,7 +249,7 @@ func HandleLocalDataset(e *core.RequestEvent, b *banquet.Banquet, tw *sqliter.Ta
 		if !valid {
 			// Convert to SQLite (File or Directory)
 			if err := ConvertToSQLite(localFilePath, cachePath); err != nil {
-				return NewBanquetError(err, "Failed to convert local file/directory to SQLite", 500, b, "")
+				return NewBanquetError(err, "Failed to convert local file/directory to SQLite", 500, b, "", cachePath)
 			}
 
 			if verbose {

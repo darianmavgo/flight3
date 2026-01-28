@@ -5,6 +5,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -99,6 +100,8 @@ func Install() error {
 		if err := sh.Run("cp", "-r", "pb_data/.", filepath.Join(dataPath, "pb_data")); err != nil {
 			fmt.Printf("  Warning: failed to copy pb_data: %v\n", err)
 		}
+	} else {
+		fmt.Println("  ⚠️  Source 'pb_data' not found, skipping data copy.")
 	}
 
 	if _, err := os.Stat("pb_public"); err == nil {
@@ -106,6 +109,8 @@ func Install() error {
 		if err := sh.Run("cp", "-r", "pb_public/.", filepath.Join(dataPath, "pb_public")); err != nil {
 			fmt.Printf("  Warning: failed to copy pb_public: %v\n", err)
 		}
+	} else {
+		fmt.Println("  ⚠️  Source 'pb_public' not found, skipping public assets copy.")
 	}
 
 	// Create a launch script that uses the data directory
@@ -240,8 +245,39 @@ func Launch() error {
 
 	fmt.Println("🚀 Launching flight and opening Chrome...")
 
+	// Find a free port
+	listener, err := net.Listen("tcp", "[::1]:0")
+	if err != nil {
+		// Try IPv4 if IPv6 fails
+		listener, err = net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return fmt.Errorf("failed to find free port: %w", err)
+		}
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	listener.Close() // Close it so the server can use it
+
+	addr := fmt.Sprintf(":%d", port)
+	if len(addr) > 0 && addr[0] == ':' {
+		// If using [::1] or 127.0.0.1 explicitly might be better for the server argument
+		// flight.go mostly cares about the string passed to --http
+		// Let's match the listener host
+		host := listener.Addr().(*net.TCPAddr).IP.String()
+		addr = fmt.Sprintf("%s:%d", host, port)
+		// Handle IPv6 brackets if needed
+		if len(host) > 0 && host == "::1" {
+			addr = fmt.Sprintf("[%s]:%d", host, port)
+		}
+	}
+
+	url := fmt.Sprintf("http://%s", addr)
+	// If it's the wildcard or [::1], we want a clickable URL usually localhost or [::1]
+	// Chrome handles [::1] fine.
+
+	fmt.Printf("\n🔗 App URL: %s\n\n", url)
+
 	// Start server in background with DEBUG enabled
-	cmd := exec.Command("./flight", "serve")
+	cmd := exec.Command("./flight", "serve", "--http", addr)
 	cmd.Env = append(os.Environ(), "DEBUG=true")
 	if err := cmd.Start(); err != nil {
 		return err

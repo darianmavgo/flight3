@@ -22,7 +22,26 @@ func EnsureCollections(app core.App) error {
 	if err := EnsureDataPipelines(app); err != nil {
 		return err
 	}
+	if err := EnsureAppSettings(app); err != nil {
+		return err
+	}
 	return EnsureBanquetLinks(app)
+}
+
+func EnsureAppSettings(app core.App) error {
+	name := "app_settings"
+	existing, err := app.FindCollectionByNameOrId(name)
+	if err == nil && existing != nil {
+		return nil
+	}
+
+	collection := core.NewBaseCollection(name)
+	collection.Fields.Add(&core.TextField{Name: "key", Required: true})
+	collection.Fields.Add(&core.TextField{Name: "value", Required: true})
+	// Add unique constraint on key using an index? PocketBase handles unique constraints via indexes,
+	// but programmatic API for indexes is specific. For now, simple fields are fine.
+
+	return app.Save(collection)
 }
 
 func EnsureBanquetLinks(app core.App) error {

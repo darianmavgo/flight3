@@ -20,7 +20,7 @@ func ServeFromCache(cachePath string, b *banquet.Banquet, tw *sqliter.TableWrite
 	// Open SQLite database
 	db, err := sql.Open("sqlite", cachePath)
 	if err != nil {
-		return NewBanquetError(err, "Failed to open cache database", 500, b, "")
+		return NewBanquetError(err, "Failed to open cache database", 500, b, "", cachePath)
 	}
 	defer db.Close()
 
@@ -31,14 +31,14 @@ func ServeFromCache(cachePath string, b *banquet.Banquet, tw *sqliter.TableWrite
 	// Execute query
 	rows, err := db.Query(query)
 	if err != nil {
-		return NewBanquetError(err, "Query execution failed", 400, b, query)
+		return NewBanquetError(err, "Query execution failed", 400, b, query, cachePath)
 	}
 	defer rows.Close()
 
 	// Get column names
 	columns, err := rows.Columns()
 	if err != nil {
-		return NewBanquetError(err, "Failed to get columns", 500, b, query)
+		return NewBanquetError(err, "Failed to get columns", 500, b, query, cachePath)
 	}
 
 	// Start HTML table with debug info
@@ -48,8 +48,8 @@ func ServeFromCache(cachePath string, b *banquet.Banquet, tw *sqliter.TableWrite
 	}
 
 	// Create one-liner Banquet debug info
-	banquetDebug := fmt.Sprintf("Banquet{Scheme:%q Host:%q Path:%q Table:%q Where:%q Limit:%q Offset:%q}",
-		b.Scheme, b.Host, b.Path, b.Table, b.Where, b.Limit, b.Offset)
+	banquetDebug := fmt.Sprintf("Banquet{Scheme:%q Host:%q Path:%q Table:%q Where:%q Limit:%q Offset:%q} DB:%q",
+		b.Scheme, b.Host, b.Path, b.Table, b.Where, b.Limit, b.Offset, cachePath)
 
 	tw.StartHTMLTableWithDebug(e.Response, columns, title, banquetDebug, query)
 
