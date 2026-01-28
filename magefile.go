@@ -259,16 +259,19 @@ func Launch() error {
 	var err error
 	var port int
 
-	// 1. Try sticky ports (8090-8099)
-	for p := 8090; p <= 8099; p++ {
-		addr := fmt.Sprintf("127.0.0.1:%d", p)
+	// 1. Try sticky ports (80, 8090-8099) on IPv6
+	ports := []int{80}
+	for i := 8090; i <= 8099; i++ {
+		ports = append(ports, i)
+	}
+
+	for _, p := range ports {
+		addr := fmt.Sprintf("[::1]:%d", p)
 		listener, err = net.Listen("tcp", addr)
 		if err == nil {
 			port = p
 			break
 		}
-		// Try IPv6 if IPv4 failed?? usually 127.0.0.1 is safer for loops.
-		// If 127.0.0.1 failed, port is likely busy.
 	}
 
 	// 2. Fallback to random free port if sticky ports failed
@@ -288,10 +291,10 @@ func Launch() error {
 	listener.Close() // Close it so the server can use it
 
 	// Determine address string for Flight
-	addr := fmt.Sprintf("127.0.0.1:%d", port) // Default to IPv4 localhost for stability
+	addr := fmt.Sprintf("[::1]:%d", port) // Default to IPv4 localhost for stability
 
 	// Create Launch URL
-	url := fmt.Sprintf("http://localhost:%d", port) // localhost implies 127.0.0.1 usuallly
+	url := fmt.Sprintf("http://[::1]:%d", port) // localhost implies 127.0.0.1 usuallly
 
 	fmt.Printf("\n🔗 App URL: %s\n\n", url)
 

@@ -6,6 +6,7 @@ require (
 	github.com/darianmavgo/banquet v1.0.6
 	github.com/darianmavgo/mksqlite v1.0.5
 	github.com/darianmavgo/sqliter v1.1.7
+	github.com/magefile/mage v1.15.0
 	github.com/pocketbase/dbx v1.11.0
 	github.com/pocketbase/pocketbase v0.36.1
 	github.com/rclone/rclone v1.72.1
@@ -151,7 +152,6 @@ require (
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/lpar/date v1.0.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20251013123823-9fd1530e3ec3 // indirect
-	github.com/magefile/mage v1.15.0 // indirect
 	github.com/mailru/easyjson v0.9.1 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
