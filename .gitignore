@@ -88,3 +88,4 @@ flight
 
 # Build artifacts - DMG files
 target_platforms/**/*.dmg
+flight3
