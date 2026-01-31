@@ -140,16 +140,17 @@ func Flight() {
 
 		// Mount SQLiter for data rendering
 		// SQLiter handles: ColumnSetPath → Query
-		se.Router.Any("/_/data", func(e *core.RequestEvent) error {
+		// SQLiter owns the /sqliter/ route namespace
+		se.Router.Any("/sqliter", func(e *core.RequestEvent) error {
 			sqliterServer.ServeHTTP(e.Response, e.Request)
 			return nil
 		})
-		se.Router.Any("/_/data/*", func(e *core.RequestEvent) error {
+		se.Router.Any("/sqliter/*", func(e *core.RequestEvent) error {
 			sqliterServer.ServeHTTP(e.Response, e.Request)
 			return nil
 		})
 
-		log.Printf("[FLIGHT] SQLiter mounted at /_/data/")
+		log.Printf("[FLIGHT] SQLiter mounted at /sqliter/")
 
 		// Rclone config UI and API routes (must be before catch-all)
 		se.Router.GET("/_/rclone_config", HandleRcloneConfigUI)

@@ -142,7 +142,7 @@ func HandleBanquet(e *core.RequestEvent, verbose bool) error {
 	// 7. Redirect to SQLiter for rendering
 	// SQLiter handles: ColumnSetPath → Query
 	relPath := strings.TrimPrefix(cachePath, e.App.DataDir()+"/cache/")
-	sqliterURL := fmt.Sprintf("/_/data/%s", relPath)
+	sqliterURL := fmt.Sprintf("/sqliter/%s", relPath)
 
 	// Append ColumnSetPath if present
 	if b.Table != "" || b.ColumnPath != "" {
@@ -310,7 +310,7 @@ func HandleLocalDataset(e *core.RequestEvent, b *banquet.Banquet, verbose bool) 
 
 	// 6. Redirect to SQLiter for rendering
 	relPath := strings.TrimPrefix(cachePath, e.App.DataDir()+"/cache/")
-	sqliterURL := fmt.Sprintf("/_/data/%s", relPath)
+	sqliterURL := fmt.Sprintf("/sqliter/%s", relPath)
 
 	// Append ColumnSetPath if present
 	if b.Table != "" || b.ColumnPath != "" {
