@@ -179,6 +179,17 @@ func Flight() {
 		// Register auto-login handler
 		se.Router.GET("/api/auto_login", HandleAutoLogin)
 
+		// Delegate static assets to SQLiter
+		// These are served by the embedded React app in sqliter
+		se.Router.Any("/assets/*", func(e *core.RequestEvent) error {
+			sqliterServer.ServeHTTP(e.Response, e.Request)
+			return nil
+		})
+		se.Router.Any("/fire.svg", func(e *core.RequestEvent) error {
+			sqliterServer.ServeHTTP(e.Response, e.Request)
+			return nil
+		})
+
 		// Register root path handler
 		se.Router.Any("/", banquetHandler)
 
