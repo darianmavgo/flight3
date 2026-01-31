@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/darianmavgo/banquet"
 	_ "github.com/darianmavgo/mksqlite/converters/all"
@@ -210,12 +211,28 @@ func HandleLocalDataset(e *core.RequestEvent, b *banquet.Banquet, tw *sqliter.Ta
 		return NewBanquetError(err, "Error accessing local file", 500, b, "", "")
 	}
 
-	// 3. Generate Cache Key
-	cacheKey := GenCacheKey(b)
-	cachePath := GetCachePath(e.App.DataDir(), cacheKey)
+	// 3. Determine Cache Path
+	var cachePath string
+	flatPath := strings.ReplaceAll(localFilePath, "/", "_")
+	flatPath = strings.ReplaceAll(flatPath, "\\", "_")
+
+	if fileInfo.IsDir() {
+		// Try index.sqlite in the folder
+		localIndexPath := filepath.Join(localFilePath, "index.sqlite")
+		if isWritable(localFilePath) {
+			cachePath = localIndexPath
+		} else {
+			// Fallback to global cache with flattened name
+			cachePath = filepath.Join(e.App.DataDir(), "cache", flatPath+".db")
+		}
+		// Ensure table assumption for directories
+		b.Table = "tb0"
+	} else {
+		// File: use global cache with flattened path
+		cachePath = filepath.Join(e.App.DataDir(), "cache", flatPath+".db")
+	}
 
 	if verbose {
-		log.Printf("[LOCAL] Cache key: %s", cacheKey)
 		log.Printf("[LOCAL] Cache path: %s", cachePath)
 	}
 
@@ -275,4 +292,16 @@ func HandleLocalDataset(e *core.RequestEvent, b *banquet.Banquet, tw *sqliter.Ta
 	// For directories, the table name in the cached DB is usually 'tb0' or 'data'
 	// mksqlite/converters/filesystem uses 'tb0' by default if not specified.
 	return ServeFromCache(cachePath, b, tw, tpl, e)
+}
+
+// isWritable checks if a directory is writable by attempting to create a temp file
+func isWritable(path string) bool {
+	testFile := filepath.Join(path, ".perm_test_"+fmt.Sprintf("%d", time.Now().UnixNano()))
+	f, err := os.Create(testFile)
+	if err != nil {
+		return false
+	}
+	f.Close()
+	os.Remove(testFile)
+	return true
 }

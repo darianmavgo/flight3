@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/darianmavgo/banquet"
+	"github.com/darianmavgo/banquet/sqlite"
 	"github.com/darianmavgo/sqliter/sqliter"
 	"github.com/pocketbase/pocketbase/core"
 	_ "modernc.org/sqlite"
@@ -25,7 +26,12 @@ func ServeFromCache(cachePath string, b *banquet.Banquet, tw *sqliter.TableWrite
 	defer db.Close()
 
 	// Build SQL query from banquet fields
-	query := buildSQLQuery(b)
+	// Infer table name if not provided
+	if b.Table == "" {
+		b.Table = sqlite.InferTable(b)
+	}
+
+	query := sqlite.Compose(b)
 	log.Printf("[SERVER] Executing query: %s", query)
 
 	// Execute query
@@ -153,6 +159,7 @@ func ServeFromCache(cachePath string, b *banquet.Banquet, tw *sqliter.TableWrite
 		// Write row
 		if err := tw.WriteHTMLRow(e.Response, rowIndex, cells); err != nil {
 			log.Printf("[SERVER] Error writing row: %v", err)
+			break
 		}
 		rowIndex++
 	}
@@ -162,73 +169,4 @@ func ServeFromCache(cachePath string, b *banquet.Banquet, tw *sqliter.TableWrite
 
 	log.Printf("[SERVER] Successfully served %d rows", rowIndex)
 	return nil
-}
-
-// buildSQLQuery constructs a SQL query from banquet fields
-func buildSQLQuery(b *banquet.Banquet) string {
-	var parts []string
-
-	// SELECT clause
-	selectClause := "*"
-	if len(b.Select) > 0 && b.Select[0] != "*" {
-		quotedSelects := make([]string, len(b.Select))
-		for i, col := range b.Select {
-			quotedSelects[i] = quoteIdentifier(col)
-		}
-		selectClause = strings.Join(quotedSelects, ", ")
-	}
-	parts = append(parts, "SELECT "+selectClause)
-
-	// FROM clause
-	table := b.Table
-	if table == "" {
-		table = "tb0" // Default table name
-	}
-	parts = append(parts, "FROM "+quoteIdentifier(table))
-
-	// WHERE clause
-	if b.Where != "" {
-		parts = append(parts, "WHERE "+b.Where)
-	}
-
-	// GROUP BY clause
-	if b.GroupBy != "" {
-		parts = append(parts, "GROUP BY "+quoteIdentifier(b.GroupBy))
-	}
-
-	// HAVING clause
-	if b.Having != "" {
-		parts = append(parts, "HAVING "+b.Having)
-	}
-
-	// ORDER BY clause
-	if b.OrderBy != "" {
-		orderBy := quoteIdentifier(b.OrderBy)
-		if b.SortDirection != "" {
-			orderBy += " " + b.SortDirection
-		}
-		parts = append(parts, "ORDER BY "+orderBy)
-	}
-
-	// LIMIT clause
-	if b.Limit != "" {
-		parts = append(parts, "LIMIT "+b.Limit)
-	}
-
-	// OFFSET clause
-	if b.Offset != "" {
-		parts = append(parts, "OFFSET "+b.Offset)
-	}
-
-	return strings.Join(parts, " ")
-}
-
-// quoteIdentifier wraps a string in double quotes and escapes any double quotes within.
-func quoteIdentifier(s string) string {
-	if s == "" || s == "*" {
-		return s
-	}
-	// If it already seems quoted or is a complex expression, skip for now?
-	// But banquet usually returns clean names.
-	return "\"" + strings.ReplaceAll(s, "\"", "\"\"") + "\""
 }

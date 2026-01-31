@@ -39,6 +39,17 @@ func Clean() error {
 	return nil
 }
 
+// Kill terminates any running flight processes
+func Kill() error {
+	fmt.Println("🔪 Killing running flight processes...")
+	if err := sh.Run("killall", "flight"); err != nil {
+		fmt.Println("  No running flight processes found (or failed to kill).")
+	} else {
+		fmt.Println("  ✅ Flight processes killed.")
+	}
+	return nil
+}
+
 // Install builds and installs flight to macOS conventional locations
 // Binary: /usr/local/bin/flight
 // Data: ~/Library/Application Support/Flight3/
@@ -195,25 +206,148 @@ func Uninstall() error {
 		fmt.Println("  Data directory preserved")
 	}
 
-	fmt.Println("\n✅ Uninstall complete!")
 	return nil
+}
+
+// Service installs Flight3 as a macOS launchd service (startup item)
+// Logs will be located at ~/Library/Logs/Flight3/flight.log
+func Service() error {
+	if runtime.GOOS != "darwin" {
+		return fmt.Errorf("Service management is only supported on macOS")
+	}
+
+	mg.Deps(Install)
+	fmt.Println("🚀 Setting up Flight3 as a background service...")
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	// 1. Define Paths
+	goPath := os.Getenv("GOPATH")
+	if goPath == "" {
+		goPath = filepath.Join(homeDir, "go")
+	}
+	binPath := filepath.Join(goPath, "bin", "flight")
+
+	logDir := filepath.Join(homeDir, "Library", "Logs", "Flight3")
+	logPath := filepath.Join(logDir, "flight.log")
+	plistPath := filepath.Join(homeDir, "Library", "LaunchAgents", "com.darianmavgo.flight3.plist")
+
+	// 2. Create Log Directory
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return fmt.Errorf("failed to create log dir: %w", err)
+	}
+
+	// 3. Create Plist
+	plistContent := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.darianmavgo.flight3</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>%s</string>
+        <string>serve</string>
+        <string>--http=[::1]:8090</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>%s</string>
+    <key>StandardErrorPath</key>
+    <string>%s</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+</dict>
+</plist>`, binPath, logPath, logPath)
+
+	if err := os.WriteFile(plistPath, []byte(plistContent), 0644); err != nil {
+		return fmt.Errorf("failed to write plist: %w", err)
+	}
+
+	// 4. Load Service
+	// Unload first just in case
+	sh.Run("launchctl", "unload", plistPath)
+	if err := sh.Run("launchctl", "load", plistPath); err != nil {
+		return fmt.Errorf("failed to load service: %w", err)
+	}
+
+	fmt.Println("✅ Service installed and started!")
+	fmt.Printf("   Logs: %s\n", logPath)
+	fmt.Printf("   URL:  http://[::1]:8090\n")
+	fmt.Println("   Use 'mage logs' to view output.")
+	return nil
+}
+
+// Unservice removes the Flight3 launchd service
+func Unservice() error {
+	if runtime.GOOS != "darwin" {
+		return fmt.Errorf("Service management is only supported on macOS")
+	}
+
+	fmt.Println("🛑 Stopping and removing Flight3 service...")
+	homeDir, _ := os.UserHomeDir()
+	plistPath := filepath.Join(homeDir, "Library", "LaunchAgents", "com.darianmavgo.flight3.plist")
+
+	sh.Run("launchctl", "unload", plistPath)
+	os.Remove(plistPath)
+
+	fmt.Println("✅ Service removed.")
+	return nil
+}
+
+// Logs tails the Flight3 service logs
+func Logs() error {
+	homeDir, _ := os.UserHomeDir()
+	logPath := filepath.Join(homeDir, "Library", "Logs", "Flight3", "flight.log")
+
+	if _, err := os.Stat(logPath); os.IsNotExist(err) {
+		return fmt.Errorf("log file not found at %s. Is the service running?", logPath)
+	}
+
+	fmt.Printf("📋 Tailing logs at %s...\n", logPath)
+	return sh.RunV("tail", "-f", logPath)
 }
 
 // Run builds and runs the flight server
 func Run() error {
 	mg.Deps(Build)
+	setTerminalTitle("✈️ Flight Server")
 	fmt.Println("🚀 Starting flight server...")
+	notify("Flight Server Started", "Ready for boarding at http://localhost:8090")
 	return sh.Run("./flight", "serve")
 }
 
 // Dev runs the server with debug mode enabled
 func Dev() error {
 	mg.Deps(Build)
+	setTerminalTitle("✈️ Flight Server (Debug)")
 	fmt.Println("🔧 Starting flight server in DEBUG mode...")
+	notify("Flight Debug Mode", "Debug server running...")
 	env := map[string]string{
 		"DEBUG": "true",
 	}
 	return sh.RunWith(env, "./flight", "serve")
+}
+
+// Helper to set the terminal window title
+func setTerminalTitle(title string) {
+	fmt.Printf("\033]0;%s\007", title)
+}
+
+// Helper to send macOS notification
+func notify(title, message string) {
+	if runtime.GOOS == "darwin" {
+		exec.Command("osascript", "-e", fmt.Sprintf("display notification \"%s\" with title \"%s\"", message, title)).Run()
+	}
 }
 
 // Deploy builds for multiple platforms
