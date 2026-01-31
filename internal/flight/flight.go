@@ -85,15 +85,14 @@ func Flight() {
 
 	log.Printf("Using data directory: %s", app.DataDir())
 
-	// Initialize SQLiter with Embedded Templates
-	// We use the templates embedded in the sqliter library.
-	tpl, err := sqliter.GetEmbeddedTemplates()
-	if err != nil {
-		log.Fatal("Failed to load embedded templates from sqliter:", err)
-	}
+	// Initialize SQLiter server
+	// SQLiter handles everything from ColumnSetPath → Query
+	sqliterConfig := sqliter.DefaultConfig()
+	sqliterConfig.ServeFolder = filepath.Join(app.DataDir(), "cache")
+	sqliterConfig.Verbose = true
+	sqliterServer := sqliter.NewServer(sqliterConfig)
 
-	// Initialize TableWriter with embedded templates
-	tw := sqliter.NewTableWriter(tpl, sqliter.DefaultConfig())
+	log.Printf("[FLIGHT] SQLiter server initialized, serving from: %s", sqliterConfig.ServeFolder)
 
 	// Initialize rclone early (doesn't need database)
 	cacheDir := filepath.Join(app.DataDir(), "cache")
@@ -131,12 +130,26 @@ func Flight() {
 			}
 
 			// Pass to BanquetHandler and handle errors
-			err := HandleBanquet(e, tw, tpl, true)
+			// Flight3 handles: Scheme → DataSetPath
+			err := HandleBanquet(e, true)
 			if err != nil {
 				return HandleBanquetError(e, err)
 			}
 			return nil
 		}
+
+		// Mount SQLiter for data rendering
+		// SQLiter handles: ColumnSetPath → Query
+		se.Router.Any("/_/data", func(e *core.RequestEvent) error {
+			sqliterServer.ServeHTTP(e.Response, e.Request)
+			return nil
+		})
+		se.Router.Any("/_/data/*", func(e *core.RequestEvent) error {
+			sqliterServer.ServeHTTP(e.Response, e.Request)
+			return nil
+		})
+
+		log.Printf("[FLIGHT] SQLiter mounted at /_/data/")
 
 		// Rclone config UI and API routes (must be before catch-all)
 		se.Router.GET("/_/rclone_config", HandleRcloneConfigUI)

@@ -2,7 +2,6 @@ package flight
 
 import (
 	"fmt"
-	"html/template"
 	"log"
 	"os"
 	"path/filepath"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/darianmavgo/banquet"
 	_ "github.com/darianmavgo/mksqlite/converters/all"
-	"github.com/darianmavgo/sqliter/sqliter"
 	"github.com/pocketbase/pocketbase/core"
 )
 
@@ -32,7 +30,7 @@ var extensionMap = map[string]string{
 	".sqlite3":  "sqlite",
 }
 
-func HandleBanquet(e *core.RequestEvent, tw *sqliter.TableWriter, tpl *template.Template, verbose bool) error {
+func HandleBanquet(e *core.RequestEvent, verbose bool) error {
 	// 1. Parse Banquet URL
 	reqURI := e.Request.RequestURI
 	reqURI = strings.TrimPrefix(reqURI, "/")
@@ -48,7 +46,7 @@ func HandleBanquet(e *core.RequestEvent, tw *sqliter.TableWriter, tpl *template.
 	}
 	// 2. Handle Local Dataset
 	if b.Scheme == "" && b.Hostname() == "" {
-		return HandleLocalDataset(e, b, tw, tpl, verbose)
+		return HandleLocalDataset(e, b, verbose)
 	}
 	// 2. Lookup Remote Configuration
 	remoteRecord, err := LookupRemote(e.App, b.Hostname())
@@ -141,13 +139,35 @@ func HandleBanquet(e *core.RequestEvent, tw *sqliter.TableWriter, tpl *template.
 		}
 	}
 
-	// 7. Serve from Cache
-	return ServeFromCache(cachePath, b, tw, tpl, e)
+	// 7. Redirect to SQLiter for rendering
+	// SQLiter handles: ColumnSetPath → Query
+	relPath := strings.TrimPrefix(cachePath, e.App.DataDir()+"/cache/")
+	sqliterURL := fmt.Sprintf("/_/data/%s", relPath)
+
+	// Append ColumnSetPath if present
+	if b.Table != "" || b.ColumnPath != "" {
+		sqliterURL += ";"
+		if b.Table != "" {
+			sqliterURL += b.Table
+		}
+		if b.ColumnPath != "" {
+			sqliterURL += "/" + b.ColumnPath
+		}
+	}
+	if b.RawQuery != "" {
+		sqliterURL += "?" + b.RawQuery
+	}
+
+	if verbose {
+		log.Printf("[BANQUET] Redirecting to SQLiter: %s", sqliterURL)
+	}
+
+	return e.Redirect(302, sqliterURL)
 }
 
 // HandleLocalDataset handles local file requests without rclone
 // Still uses caching and serving infrastructure
-func HandleLocalDataset(e *core.RequestEvent, b *banquet.Banquet, tw *sqliter.TableWriter, tpl *template.Template, verbose bool) error {
+func HandleLocalDataset(e *core.RequestEvent, b *banquet.Banquet, verbose bool) error {
 	if verbose {
 		log.Printf("[LOCAL] Handling local dataset: %s", b.DataSetPath)
 	}
@@ -288,10 +308,29 @@ func HandleLocalDataset(e *core.RequestEvent, b *banquet.Banquet, tw *sqliter.Ta
 		}
 	}
 
-	// 6. Serve from Cache
-	// For directories, the table name in the cached DB is usually 'tb0' or 'data'
-	// mksqlite/converters/filesystem uses 'tb0' by default if not specified.
-	return ServeFromCache(cachePath, b, tw, tpl, e)
+	// 6. Redirect to SQLiter for rendering
+	relPath := strings.TrimPrefix(cachePath, e.App.DataDir()+"/cache/")
+	sqliterURL := fmt.Sprintf("/_/data/%s", relPath)
+
+	// Append ColumnSetPath if present
+	if b.Table != "" || b.ColumnPath != "" {
+		sqliterURL += ";"
+		if b.Table != "" {
+			sqliterURL += b.Table
+		}
+		if b.ColumnPath != "" {
+			sqliterURL += "/" + b.ColumnPath
+		}
+	}
+	if b.RawQuery != "" {
+		sqliterURL += "?" + b.RawQuery
+	}
+
+	if verbose {
+		log.Printf("[LOCAL] Redirecting to SQLiter: %s", sqliterURL)
+	}
+
+	return e.Redirect(302, sqliterURL)
 }
 
 // isWritable checks if a directory is writable by attempting to create a temp file
