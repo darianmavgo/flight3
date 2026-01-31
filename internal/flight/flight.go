@@ -178,7 +178,7 @@ func Flight() {
 		}
 
 		// Configure centralized routing
-		ConfigureRouting(se.App, sqliterServer)
+		ConfigureRouting(se, sqliterServer)
 
 		// Launch Chrome on macOS if we are serving
 		if isServe && httpAddr != "" && runtime.GOOS == "darwin" {
