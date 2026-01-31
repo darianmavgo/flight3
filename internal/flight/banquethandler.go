@@ -139,30 +139,30 @@ func HandleBanquet(e *core.RequestEvent, verbose bool) error {
 		}
 	}
 
-	// 7. Redirect to SQLiter for rendering
+	// 7. Serve SQLiter UI (keeps Banquet URL in browser)
 	// SQLiter handles: ColumnSetPath → Query
-	relPath := strings.TrimPrefix(cachePath, e.App.DataDir()+"/cache/")
-	sqliterURL := fmt.Sprintf("/sqliter/%s", relPath)
+	// The React UI will make API calls to /sqliter/ internally
 
-	// Append ColumnSetPath if present
-	if b.Table != "" || b.ColumnPath != "" {
-		sqliterURL += ";"
-		if b.Table != "" {
-			sqliterURL += b.Table
-		}
-		if b.ColumnPath != "" {
-			sqliterURL += "/" + b.ColumnPath
-		}
-	}
-	if b.RawQuery != "" {
-		sqliterURL += "?" + b.RawQuery
-	}
+	// Store the database path and banquet info for SQLiter to access
+	// SQLiter's React app will parse the current URL and make API calls
 
 	if verbose {
-		log.Printf("[BANQUET] Redirecting to SQLiter: %s", sqliterURL)
+		log.Printf("[BANQUET] Serving SQLiter UI for: %s", cachePath)
+		log.Printf("[BANQUET] Banquet URL preserved in browser")
 	}
 
-	return e.Redirect(302, sqliterURL)
+	// Get the sqliter server from the app context
+	// We need to pass it through the request context or use a global
+	// For now, we'll use the global pattern
+	sqliterServer := GetSQLiterServer()
+	if sqliterServer == nil {
+		return NewBanquetError(nil, "SQLiter server not initialized", 500, b, "", cachePath)
+	}
+
+	// Serve SQLiter's React UI directly (no redirect)
+	// This keeps the Banquet URL in the browser
+	sqliterServer.ServeHTTP(e.Response, e.Request)
+	return nil
 }
 
 // HandleLocalDataset handles local file requests without rclone
@@ -308,29 +308,20 @@ func HandleLocalDataset(e *core.RequestEvent, b *banquet.Banquet, verbose bool) 
 		}
 	}
 
-	// 6. Redirect to SQLiter for rendering
-	relPath := strings.TrimPrefix(cachePath, e.App.DataDir()+"/cache/")
-	sqliterURL := fmt.Sprintf("/sqliter/%s", relPath)
-
-	// Append ColumnSetPath if present
-	if b.Table != "" || b.ColumnPath != "" {
-		sqliterURL += ";"
-		if b.Table != "" {
-			sqliterURL += b.Table
-		}
-		if b.ColumnPath != "" {
-			sqliterURL += "/" + b.ColumnPath
-		}
-	}
-	if b.RawQuery != "" {
-		sqliterURL += "?" + b.RawQuery
-	}
-
+	// 6. Serve SQLiter UI (keeps Banquet URL in browser)
 	if verbose {
-		log.Printf("[LOCAL] Redirecting to SQLiter: %s", sqliterURL)
+		log.Printf("[LOCAL] Serving SQLiter UI for: %s", cachePath)
+		log.Printf("[LOCAL] Banquet URL preserved in browser")
 	}
 
-	return e.Redirect(302, sqliterURL)
+	sqliterServer := GetSQLiterServer()
+	if sqliterServer == nil {
+		return NewBanquetError(nil, "SQLiter server not initialized", 500, b, "", cachePath)
+	}
+
+	// Serve SQLiter's React UI directly (no redirect)
+	sqliterServer.ServeHTTP(e.Response, e.Request)
+	return nil
 }
 
 // isWritable checks if a directory is writable by attempting to create a temp file

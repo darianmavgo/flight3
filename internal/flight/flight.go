@@ -42,6 +42,19 @@ func getDataDirectory() string {
 	return "./pb_data"
 }
 
+// Global SQLiter server instance
+var globalSQLiterServer *sqliter.Server
+
+// SetSQLiterServer sets the global SQLiter server instance
+func SetSQLiterServer(server *sqliter.Server) {
+	globalSQLiterServer = server
+}
+
+// GetSQLiterServer returns the global SQLiter server instance
+func GetSQLiterServer() *sqliter.Server {
+	return globalSQLiterServer
+}
+
 func Flight() {
 
 	// Default to "serve" command if no arguments are provided
@@ -91,6 +104,7 @@ func Flight() {
 	sqliterConfig.ServeFolder = filepath.Join(app.DataDir(), "cache")
 	sqliterConfig.Verbose = true
 	sqliterServer := sqliter.NewServer(sqliterConfig)
+	SetSQLiterServer(sqliterServer) // Make it globally accessible
 
 	log.Printf("[FLIGHT] SQLiter server initialized, serving from: %s", sqliterConfig.ServeFolder)
 
