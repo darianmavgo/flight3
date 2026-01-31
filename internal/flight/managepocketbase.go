@@ -2,8 +2,6 @@ package flight
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -142,15 +140,6 @@ func EnsureDataPipelines(app core.App) error {
 	collection.Fields.Add(&core.NumberField{Name: "cache_ttl"}) // in minutes
 
 	return app.Save(collection)
-}
-
-func EnsurePipelineCache(app core.App, cacheKey string, remote *core.Record, remotePath string, ttl float64) (string, error) {
-	// Look for cache file
-	cacheDir := filepath.Join(app.DataDir(), "cache")
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
-		return "", err
-	}
-	return filepath.Join(cacheDir, cacheKey+".db"), nil
 }
 
 func EnsureSuperUser(app core.App, email, password string) error {

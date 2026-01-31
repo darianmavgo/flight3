@@ -341,23 +341,3 @@ func (rm *RcloneManager) IndexDirectory(v *vfs.VFS, remotePath string, localCach
 	log.Printf("[RCLONE] Indexed %d entries successfully", len(entries))
 	return nil
 }
-
-// GetConfigHash returns the hash of a remote record's configuration
-func (rm *RcloneManager) GetConfigHash(remoteRecord *core.Record) string {
-	configData := remoteRecord.Get("config")
-
-	var config map[string]interface{}
-	switch v := configData.(type) {
-	case map[string]interface{}:
-		config = v
-	case string:
-		if err := json.Unmarshal([]byte(v), &config); err != nil {
-			log.Printf("[RCLONE] Warning: failed to parse config for hashing: %v", err)
-			return ""
-		}
-	default:
-		return ""
-	}
-
-	return generateVFSHash(config)
-}

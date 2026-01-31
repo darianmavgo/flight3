@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/darianmavgo/banquet v1.1.0
 	github.com/darianmavgo/mksqlite v1.3.1
-	github.com/darianmavgo/sqliter v1.4.2
+	github.com/darianmavgo/sqliter v1.5.0
 	github.com/magefile/mage v1.15.0
 	github.com/pocketbase/dbx v1.11.0
 	github.com/pocketbase/pocketbase v0.36.1

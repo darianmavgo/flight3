@@ -110,7 +110,13 @@ func HandleBanquet(e *core.RequestEvent, verbose bool) error {
 			}
 
 			rawFilePath := filepath.Join(tempDir, cacheKey+filepath.Ext(b.DataSetPath))
-			if err := rcloneManager.FetchFile(vfs, b.DataSetPath, rawFilePath); err != nil {
+			// Construct fetch path with query parameters if present
+			fetchPath := b.DataSetPath
+			if b.URL.RawQuery != "" {
+				fetchPath += "?" + b.URL.RawQuery
+			}
+
+			if err := rcloneManager.FetchFile(vfs, fetchPath, rawFilePath); err != nil {
 				return NewBanquetError(err, fmt.Sprintf("Failed to fetch file: %s", b.DataSetPath), 500, b, "", cachePath)
 			}
 

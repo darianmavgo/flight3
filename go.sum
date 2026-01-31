@@ -201,8 +201,8 @@ github.com/darianmavgo/banquet v1.1.0 h1:Bkkr/zQ101Oeo/q0Y8OiJOegDnhCJjLdV+H9siX
 github.com/darianmavgo/banquet v1.1.0/go.mod h1:keI4NAFCuDs7niaEMnSJhrcjr4NjyOoyxxUR0wGllV0=
 github.com/darianmavgo/mksqlite v1.3.1 h1:ZcRBkPOIVtC8S0hFYJGPHyp3jNfaBcfeuNMeYfXOGeI=
 github.com/darianmavgo/mksqlite v1.3.1/go.mod h1:Cg4Ge3tI3CGPi5YziACpgqAyPQ9t+ElHPlN7wXgmhe4=
-github.com/darianmavgo/sqliter v1.4.2 h1:dsuWGiwNlBVLh3Cq4ajCrAVvlXpsbqyJ84sNo8dR4wQ=
-github.com/darianmavgo/sqliter v1.4.2/go.mod h1:6MK6n7yx+Yx5sbOUIV9ueaODF+i9Ar6Vkfhz1sjC+Rw=
+github.com/darianmavgo/sqliter v1.5.0 h1:AuGox4VL1zOr6EAqzPkSArpC1NVITi8O4ZbvWv/EeU0=
+github.com/darianmavgo/sqliter v1.5.0/go.mod h1:79BvXk6gW6qcyr5CywtfH12etBBxZ2cZxfCHF54ctbU=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=

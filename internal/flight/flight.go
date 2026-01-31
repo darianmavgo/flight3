@@ -62,19 +62,66 @@ func Flight() {
 		os.Args = append(os.Args, "serve")
 	}
 
-	// Detect if we are serving and if --http is already set
+	// Detect if we are serving and checked for start URL
 	isServe := false
 	httpAddr := ""
-	for i, arg := range os.Args {
+	startRequestURL := ""
+
+	var newArgs []string
+	newArgs = append(newArgs, os.Args[0])
+
+	for i := 1; i < len(os.Args); i++ {
+		arg := os.Args[i]
 		if arg == "serve" {
 			isServe = true
+			newArgs = append(newArgs, arg)
+			continue
 		}
+
 		if strings.HasPrefix(arg, "--http=") {
 			httpAddr = strings.TrimPrefix(arg, "--http=")
+			newArgs = append(newArgs, arg)
+			continue
 		} else if arg == "--http" && i+1 < len(os.Args) {
 			httpAddr = os.Args[i+1]
+			newArgs = append(newArgs, arg)
+			i++ // Skip next arg
+			newArgs = append(newArgs, httpAddr)
+			continue
+		}
+
+		// Check if it's a URL (contains scheme) or path, and not a flag or known command
+		if !strings.HasPrefix(arg, "-") && (strings.Contains(arg, "://") || strings.HasPrefix(arg, "/")) {
+			startRequestURL = arg
+			// If we found a URL, we implicitly mean "serve" mode if not specified?
+			if !isServe {
+				isServe = true
+				// Ensure "serve" is added if not present (handled by checking foundCommand logic implicitly by PocketBase if we pass args?)
+				// PocketBase needs "serve" command to be explicitly in args usually.
+				// If we haven't seen "serve", append it now?
+				// Better approach: filter out the URL from args passed to PB, and ensure "serve" is present if we are serving.
+			}
+			continue // Consume this arg, don't pass to PocketBase
+		}
+
+		newArgs = append(newArgs, arg)
+	}
+
+	// Ensure "serve" command is present if we decided we are serving and it's missing
+	// (e.g. user ran `flight http://url`)
+	hasServe := false
+	for _, arg := range newArgs {
+		if arg == "serve" {
+			hasServe = true
+			break
 		}
 	}
+	if isServe && !hasServe {
+		// Insert "serve" after program name
+		newArgs = append(newArgs[:1], append([]string{"serve"}, newArgs[1:]...)...)
+	}
+
+	os.Args = newArgs
 
 	// If serving but no --http address specified, find a random high port on [::1]
 	// This makes it enjoyable on macOS as requested.
@@ -103,6 +150,7 @@ func Flight() {
 	sqliterConfig := sqliter.DefaultConfig()
 	sqliterConfig.ServeFolder = filepath.Join(app.DataDir(), "cache")
 	sqliterConfig.Verbose = true
+	sqliterConfig.BaseURL = "/sqliter/"
 	sqliterServer := sqliter.NewServer(sqliterConfig)
 	SetSQLiterServer(sqliterServer) // Make it globally accessible
 
@@ -129,85 +177,28 @@ func Flight() {
 			log.Printf("Error ensuring superuser: %v", err)
 		}
 
-		// Handler function for banquet requests
-		banquetHandler := func(e *core.RequestEvent) error {
-			path := e.Request.URL.Path
-
-			// Don't intercept PocketBase paths
-			if strings.HasPrefix(path, "/_/") || strings.HasPrefix(path, "/api/") {
-				return e.Next()
-			}
-
-			// Don't intercept common web standards
-			if path == "/favicon.ico" || path == "/robots.txt" || path == "/sitemap.xml" {
-				return e.Next()
-			}
-
-			// Pass to BanquetHandler and handle errors
-			// Flight3 handles: Scheme → DataSetPath
-			err := HandleBanquet(e, true)
-			if err != nil {
-				return HandleBanquetError(e, err)
-			}
-			return nil
-		}
-
-		// Mount SQLiter for data rendering
-		// SQLiter handles: ColumnSetPath → Query
-		// SQLiter owns the /sqliter/ route namespace
-		se.Router.Any("/sqliter", func(e *core.RequestEvent) error {
-			sqliterServer.ServeHTTP(e.Response, e.Request)
-			return nil
-		})
-		se.Router.Any("/sqliter/*", func(e *core.RequestEvent) error {
-			sqliterServer.ServeHTTP(e.Response, e.Request)
-			return nil
-		})
-
-		log.Printf("[FLIGHT] SQLiter mounted at /sqliter/")
-
-		// Rclone config UI and API routes (must be before catch-all)
-		se.Router.GET("/_/rclone_config", HandleRcloneConfigUI)
-		se.Router.GET("/_/rclone_config/api/providers", HandleListProviders)
-		se.Router.GET("/_/rclone_config/api/provider/{type}", HandleGetProviderSchema)
-		se.Router.GET("/_/rclone_config/api/remotes", HandleListRemotes)
-		se.Router.POST("/_/rclone_config/api/remotes", HandleCreateRemote)
-		se.Router.PUT("/_/rclone_config/api/remotes/{id}", HandleUpdateRemote)
-		se.Router.DELETE("/_/rclone_config/api/remotes/{id}", HandleDeleteRemote)
-		se.Router.POST("/_/rclone_config/api/test", HandleTestRemote)
-
-		// Register auto-login handler
-		se.Router.GET("/api/auto_login", HandleAutoLogin)
-
-		// Delegate static assets to SQLiter
-		// These are served by the embedded React app in sqliter
-		se.Router.Any("/assets/*", func(e *core.RequestEvent) error {
-			sqliterServer.ServeHTTP(e.Response, e.Request)
-			return nil
-		})
-		se.Router.Any("/fire.svg", func(e *core.RequestEvent) error {
-			sqliterServer.ServeHTTP(e.Response, e.Request)
-			return nil
-		})
-
-		// Register root path handler
-		se.Router.Any("/", banquetHandler)
-
-		// Register catch-all route for all other paths
-		se.Router.Any("/*", banquetHandler)
+		// Configure centralized routing
+		ConfigureRouting(se.App, sqliterServer)
 
 		// Launch Chrome on macOS if we are serving
 		if isServe && httpAddr != "" && runtime.GOOS == "darwin" {
 			go func() {
 				// Give the server a moment to bind and start listening
 				time.Sleep(1 * time.Second)
-				// Use auto-login route to ensure user is authenticated
-				url := "http://" + httpAddr + "/api/auto_login"
-				log.Printf("[SILICON] Enjoying Flight3: Launching Google Chrome to %s", url)
-				err := exec.Command("open", "-a", "Google Chrome", url).Start()
+				// Open the URL directly
+				targetURL := "http://" + httpAddr + "/" // Start at root
+
+				if startRequestURL != "" {
+					// We want to open http://localhost:port/<startRequestURL>
+					// Be careful with slashes
+					targetURL += strings.TrimPrefix(startRequestURL, "/")
+				}
+
+				log.Printf("[SILICON] Enjoying Flight3: Launching Google Chrome to %s", targetURL)
+				err := exec.Command("open", "-a", "Google Chrome", targetURL).Start()
 				if err != nil {
 					log.Printf("[SILICON] Failed to launch Google Chrome: %v (falling back to default browser)", err)
-					exec.Command("open", url).Start()
+					exec.Command("open", targetURL).Start()
 				}
 			}()
 		}
