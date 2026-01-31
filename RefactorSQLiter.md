@@ -1,8 +1,25 @@
 # Refactor SQLiter Integration Plan (CORRECTED)
 
+## The Clear Responsibility Boundary
+
+**For any Banquet URL:**
+
+```
+[Scheme]://[User]@[Host]/[DataSetPath]/[Table];[ColumnPath]?[Query]
+└────────────────────────────────────┘ └──────────────────────┘
+         FLIGHT3 TERRITORY                  SQLITER TERRITORY
+```
+
+- **Flight3**: Handles **Scheme → DataSetPath** (resource acquisition)
+- **SQLiter**: Handles **ColumnPath → Query** (data querying)
+
+See `ResponsibilityBoundary.md` for detailed breakdown.
+
+---
+
 ## Architecture Understanding
 
-### Flight3's Role (NO HTML RENDERING)
+### Flight3's Role (Resource Acquisition)
 Flight3 is a **data orchestration layer** that:
 1. **Authenticates users** via PocketBase
 2. **Manages rclone connections** to remote storage
