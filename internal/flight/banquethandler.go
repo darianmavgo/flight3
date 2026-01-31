@@ -51,7 +51,38 @@ func HandleBanquet(e *core.RequestEvent, verbose bool) error {
 	// 2. Lookup Remote Configuration
 	remoteRecord, err := LookupRemote(e.App, b.Hostname())
 	if err != nil {
-		return NewBanquetError(err, fmt.Sprintf("Remote '%s' not found", b.Hostname()), 404, b, "", "")
+		// Check for ad-hoc HTTP/HTTPS support
+		// We handle both standard (https://) and some potential malformed/shortened forms (https:/)
+		// that might come through depending on how the URL was passed.
+		isHTTP := strings.HasPrefix(reqURI, "http:")
+		isHTTPS := strings.HasPrefix(reqURI, "https:")
+
+		if isHTTP || isHTTPS {
+			if verbose {
+				log.Printf("[BANQUET] Remote '%s' not found, attempting ad-hoc HTTP remote", b.Hostname())
+			}
+
+			collection, errCol := e.App.FindCollectionByNameOrId("rclone_remotes")
+			if errCol != nil {
+				return NewBanquetError(errCol, "Failed to find rclone_remotes collection", 500, b, "", "")
+			}
+
+			// Create temporary in-memory record
+			remoteRecord = core.NewRecord(collection)
+			remoteRecord.Set("type", "http")
+
+			scheme := "http"
+			if isHTTPS {
+				scheme = "https"
+			}
+
+			// Configure rclone http backend
+			remoteRecord.Set("config", map[string]interface{}{
+				"url": fmt.Sprintf("%s://%s", scheme, b.Hostname()),
+			})
+		} else {
+			return NewBanquetError(err, fmt.Sprintf("Remote '%s' not found", b.Hostname()), 404, b, "", "")
+		}
 	}
 
 	// 3. Initialize VFS
