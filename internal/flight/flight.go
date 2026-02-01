@@ -70,40 +70,55 @@ func Flight() {
 	var newArgs []string
 	newArgs = append(newArgs, os.Args[0])
 
-	for i := 1; i < len(os.Args); i++ {
-		arg := os.Args[i]
+	// First pass: detecting 'serve' or help to avoid interfering with standard behavior
+	for _, arg := range os.Args {
 		if arg == "serve" {
 			isServe = true
-			newArgs = append(newArgs, arg)
-			continue
 		}
-
-		if strings.HasPrefix(arg, "--http=") {
-			httpAddr = strings.TrimPrefix(arg, "--http=")
-			newArgs = append(newArgs, arg)
-			continue
-		} else if arg == "--http" && i+1 < len(os.Args) {
-			httpAddr = os.Args[i+1]
-			newArgs = append(newArgs, arg)
-			i++ // Skip next arg
-			newArgs = append(newArgs, httpAddr)
-			continue
+		if arg == "--help" || arg == "-h" {
+			// If help is requested, just pass everything through to PocketBase
+			// so it prints the standard help text.
+			return
 		}
+	}
 
-		// Check if it's a URL (contains scheme) or path, and not a flag or known command
-		if !strings.HasPrefix(arg, "-") && (strings.Contains(arg, "://") || strings.HasPrefix(arg, "/")) {
-			startRequestURL = arg
-			// If we found a URL, we implicitly mean "serve" mode if not specified?
-			if !isServe {
-				isServe = true
-				// Ensure "serve" is added if not present (handled by checking foundCommand logic implicitly by PocketBase if we pass args?)
-				// PocketBase needs "serve" command to be explicitly in args usually.
-				// If we haven't seen "serve", append it now?
-				// Better approach: filter out the URL from args passed to PB, and ensure "serve" is present if we are serving.
+	for i := 1; i < len(os.Args); i++ {
+		arg := os.Args[i]
+
+		// Handle flags
+		if strings.HasPrefix(arg, "-") {
+			newArgs = append(newArgs, arg)
+
+			// Check for flags that take arguments
+			// Handle --http separate arg
+			if arg == "--http" && i+1 < len(os.Args) {
+				httpAddr = os.Args[i+1]
+				newArgs = append(newArgs, httpAddr)
+				i++ // Consume next
+				continue
 			}
-			continue // Consume this arg, don't pass to PocketBase
+			// Handle --http=...
+			if strings.HasPrefix(arg, "--http=") {
+				httpAddr = strings.TrimPrefix(arg, "--http=")
+			}
+			continue
 		}
 
+		// Handle known commands
+		if arg == "serve" || arg == "migrate" || arg == "admin" || arg == "upgrade" {
+			newArgs = append(newArgs, arg)
+			continue
+		}
+
+		// If it's not a flag and not a known command, assume it's our start URL
+		// This captures "https://..." or "/path/to/file" or even "file.db"
+		if startRequestURL == "" {
+			startRequestURL = arg
+			isServe = true
+			continue // Do NOT add to newArgs
+		}
+
+		// If we already have a start URL, treat subsequent args as potential valid args (weird, but safe)
 		newArgs = append(newArgs, arg)
 	}
 
