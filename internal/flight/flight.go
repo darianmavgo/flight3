@@ -2,8 +2,13 @@ package flight
 
 // deliberately import everything here as the primary location of orchestration.
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
 	"log"
 	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -164,6 +169,58 @@ func Flight() {
 	// SQLiter handles everything from ColumnSetPath → Query
 	sqliterConfig := sqliter.DefaultConfig()
 	sqliterConfig.ServeFolder = filepath.Join(app.DataDir(), "cache")
+	sqliterConfig.RemoteFetcher = func(urlStr string, destFolder string) (string, error) {
+		log.Printf("[FLIGHT] Fetching remote file: %s", urlStr)
+		// 1. Determine destination path
+		// Use SHA256 of URL as filename to avoid collisions and length issues
+		hash := sha256.Sum256([]byte(urlStr))
+		hashStr := hex.EncodeToString(hash[:])[:16]
+
+		// Try to get extension from URL
+		u, err := url.Parse(urlStr)
+		ext := ""
+		if err == nil {
+			ext = filepath.Ext(u.Path)
+		}
+		if ext == "" {
+			ext = ".db" // Fallback
+		}
+
+		fileName := hashStr + ext
+		destPath := filepath.Join(destFolder, fileName)
+
+		// 2. Check if exists
+		if _, err := os.Stat(destPath); err == nil {
+			log.Printf("[FLIGHT] Cache hit: %s", destPath)
+			return destPath, nil
+		}
+
+		// 3. Download
+		log.Printf("[FLIGHT] Downloading to: %s", destPath)
+		resp, err := http.Get(urlStr)
+		if err != nil {
+			return "", err
+		}
+		defer resp.Body.Close()
+
+		// Ensure directory exists
+		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+			return "", err
+		}
+
+		out, err := os.Create(destPath)
+		if err != nil {
+			return "", err
+		}
+		defer out.Close()
+
+		_, err = io.Copy(out, resp.Body)
+		if err != nil {
+			return "", err
+		}
+
+		return destPath, nil
+	}
 	sqliterConfig.Verbose = true
 	sqliterConfig.BaseURL = "/sqliter/"
 	sqliterServer := sqliter.NewServer(sqliterConfig)
