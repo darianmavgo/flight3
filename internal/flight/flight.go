@@ -3,13 +3,10 @@ package flight
 // deliberately import everything here as the primary location of orchestration.
 import (
 	"log"
-	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
 	_ "github.com/darianmavgo/mksqlite/converters/all"
 	"github.com/pocketbase/pocketbase"
@@ -124,15 +121,10 @@ func Flight() {
 
 	os.Args = newArgs
 
-	// If serving but no --http address specified, find a random high port on [::1]
-	// This makes it enjoyable on macOS as requested.
+	// If serving but no --http address specified, default to 127.0.0.1:8090
 	if isServe && httpAddr == "" {
-		l, err := net.Listen("tcp", "[::1]:0")
-		if err == nil {
-			httpAddr = l.Addr().String()
-			l.Close()
-			os.Args = append(os.Args, "--http="+httpAddr)
-		}
+		httpAddr = "127.0.0.1:8090"
+		os.Args = append(os.Args, "--http="+httpAddr)
 	}
 
 	// Determine data directory
@@ -169,29 +161,6 @@ func Flight() {
 
 		// Configure centralized routing
 		ConfigureRouting(se.App)
-
-		// Launch Chrome on macOS if we are serving
-		if isServe && httpAddr != "" && runtime.GOOS == "darwin" {
-			go func() {
-				// Give the server a moment to bind and start listening
-				time.Sleep(1 * time.Second)
-				// Open the URL directly
-				targetURL := "http://" + httpAddr + "/" // Start at root
-
-				if startRequestURL != "" {
-					// We want to open http://localhost:port/<startRequestURL>
-					// Be careful with slashes
-					targetURL += strings.TrimPrefix(startRequestURL, "/")
-				}
-
-				log.Printf("[SILICON] Enjoying Flight3: Launching Google Chrome to %s", targetURL)
-				err := exec.Command("open", "-a", "Google Chrome", targetURL).Start()
-				if err != nil {
-					log.Printf("[SILICON] Failed to launch Google Chrome: %v (falling back to default browser)", err)
-					exec.Command("open", targetURL).Start()
-				}
-			}()
-		}
 
 		return se.Next()
 	})
