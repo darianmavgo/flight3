@@ -2,13 +2,8 @@ package flight
 
 // deliberately import everything here as the primary location of orchestration.
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"io"
 	"log"
 	"net"
-	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,7 +12,6 @@ import (
 	"time"
 
 	_ "github.com/darianmavgo/mksqlite/converters/all"
-	"github.com/darianmavgo/sqliter/sqliter"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -45,19 +39,6 @@ func getDataDirectory() string {
 
 	// Fallback to current directory
 	return "./pb_data"
-}
-
-// Global SQLiter server instance
-var globalSQLiterServer *sqliter.Server
-
-// SetSQLiterServer sets the global SQLiter server instance
-func SetSQLiterServer(server *sqliter.Server) {
-	globalSQLiterServer = server
-}
-
-// GetSQLiterServer returns the global SQLiter server instance
-func GetSQLiterServer() *sqliter.Server {
-	return globalSQLiterServer
 }
 
 func Flight() {
@@ -165,69 +146,6 @@ func Flight() {
 
 	log.Printf("Using data directory: %s", app.DataDir())
 
-	// Initialize SQLiter server
-	// SQLiter handles everything from ColumnSetPath → Query
-	sqliterConfig := sqliter.DefaultConfig()
-	sqliterConfig.ServeFolder = filepath.Join(app.DataDir(), "cache")
-	sqliterConfig.RemoteFetcher = func(urlStr string, destFolder string) (string, error) {
-		log.Printf("[FLIGHT] Fetching remote file: %s", urlStr)
-		// 1. Determine destination path
-		// Use SHA256 of URL as filename to avoid collisions and length issues
-		hash := sha256.Sum256([]byte(urlStr))
-		hashStr := hex.EncodeToString(hash[:])[:16]
-
-		// Try to get extension from URL
-		u, err := url.Parse(urlStr)
-		ext := ""
-		if err == nil {
-			ext = filepath.Ext(u.Path)
-		}
-		if ext == "" {
-			ext = ".db" // Fallback
-		}
-
-		fileName := hashStr + ext
-		destPath := filepath.Join(destFolder, fileName)
-
-		// 2. Check if exists
-		if _, err := os.Stat(destPath); err == nil {
-			log.Printf("[FLIGHT] Cache hit: %s", destPath)
-			return destPath, nil
-		}
-
-		// 3. Download
-		log.Printf("[FLIGHT] Downloading to: %s", destPath)
-		resp, err := http.Get(urlStr)
-		if err != nil {
-			return "", err
-		}
-		defer resp.Body.Close()
-
-		// Ensure directory exists
-		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
-			return "", err
-		}
-
-		out, err := os.Create(destPath)
-		if err != nil {
-			return "", err
-		}
-		defer out.Close()
-
-		_, err = io.Copy(out, resp.Body)
-		if err != nil {
-			return "", err
-		}
-
-		return destPath, nil
-	}
-	sqliterConfig.Verbose = true
-	sqliterConfig.BaseURL = "/sqliter/"
-	sqliterServer := sqliter.NewServer(sqliterConfig)
-	SetSQLiterServer(sqliterServer) // Make it globally accessible
-
-	log.Printf("[FLIGHT] SQLiter server initialized, serving from: %s", sqliterConfig.ServeFolder)
-
 	// Initialize rclone early (doesn't need database)
 	cacheDir := filepath.Join(app.DataDir(), "cache")
 	if err := InitRclone(cacheDir); err != nil {
@@ -250,8 +168,7 @@ func Flight() {
 		}
 
 		// Configure centralized routing
-		// Configure centralized routing
-		ConfigureRouting(se.App, sqliterServer)
+		ConfigureRouting(se.App)
 
 		// Launch Chrome on macOS if we are serving
 		if isServe && httpAddr != "" && runtime.GOOS == "darwin" {
