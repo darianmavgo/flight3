@@ -18,36 +18,39 @@ The user requirement "manage communication through a shared sqlite db" is fulfil
 
 ## Implementation Plan
 
-### Phase 1: Server Readiness (Flight3)
-Flight3 is already well-positioned. We need to verify it exposes the necessary endpoints.
--   [x] **PocketBase Integration**: Already fully integrated (`flight.go`, `managepocketbase.go`).
+### Phase 1: Server Readiness (Flight3) ✅ COMPLETE
+Flight3 is production-ready with all necessary endpoints.
+-   [x] **PocketBase Integration**: Fully integrated (`flight.go`, `managepocketbase.go`).
 -   [x] **Banquet Endpoints**: Exposed via `/sqliter/` prefix.
--   [ ] **Realtime Events**: Verify `flight3` is broadcasting changes to collections like `banquet_links`.
+-   [x] **Auto-Login**: Implemented at `/api/auto_login` for desktop mode.
+-   [x] **Desktop Mode**: Coordinated launch via `mage desktop` command.
 
-### Phase 2: Client Upgrade (SQLiter-Dart)
-Transform `sqliter-dart` from a local file viewer to a networked client.
+### Phase 2: Client Integration (SQLiter-Dart) ✅ IMPLEMENTED
+`sqliter-dart` is now a fully functional networked client.
 
-**1. Add Dependencies**
-Add the PocketBase SDK to `sqliter-dart`.
-```yaml
-dependencies:
-  pocketbase: ^0.16.2 # Check latest version
-  http: ^1.2.0
-```
+**Current Implementation:**
 
-**2. Architecture Update**
-Refactor `main.dart` or create a new `FlightClient` service.
--   **Local Mode**: Keep existing functionality (opening local `.sqlite` files).
--   **Flight Mode**: Connect to `http://localhost:8090` (or `flight` served port).
+1. **Desktop Mode**
+   - Launch via `mage desktop` from flight3 directory
+   - Automatically builds and starts both server and client
+   - Server URL passed via `--dart-define=FLIGHT_URL=http://127.0.0.1:8090`
+   - Auto-login enabled for seamless desktop experience
 
-**3. "Shared DB" Communication Pattern**
-Instead of just reading files, the client will "communicate" via the `banquet_links` collection.
+2. **API Integration**
+   - File download: `GET /sqliter/file/{banquet-path}`
+   - Sync metadata: `GET /sqliter/sync/{banquet-path}`
+   - Query rows: `GET /sqliter/rows?path={path}&start={offset}&end={limit}`
 
-*   **Scenario: Saving a Query**
-    1.  User in Dart Client crafts a complex query: `data.sqlite;Table[0:100]`.
-    2.  Client saves this to `banquet_links` collection via PocketBase SDK.
-    3.  Server (Flight3) persists it.
-    4.  Other clients (or the Web UI) see this new link instantly via Realtime subscription.
+3. **Home Page**
+   - Displays `banquet_links` collection from server
+   - Users can select links to navigate to datasets
+   - PocketBase realtime updates (if subscribed)
+
+**Features:**
+-   [x] **Local Mode**: Opens local `.sqlite` files directly
+-   [x] **Flight Mode**: Connects to Flight3 server
+-   [x] **Auto-Discovery**: Server URL configured via build-time dart-define
+-   [x] **PlutoGrid Rendering**: Rich table display with sorting/filtering
 
 ### Phase 3: The Banquet Data Protocol
 How to fetch the actual table data?

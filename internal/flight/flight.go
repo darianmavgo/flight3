@@ -8,12 +8,11 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/darianmavgo/banquet"
 	_ "github.com/darianmavgo/mksqlite/converters/all"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
-)
-
-// getDataDirectory determines the appropriate data directory
+) // getDataDirectory determines the appropriate data directory
 // Priority: 1. Conventional location if exists, 2. Current directory
 func getDataDirectory() string {
 	homeDir, err := os.UserHomeDir()
@@ -49,6 +48,7 @@ func Flight() {
 	isServe := false
 	httpAddr := ""
 	startRequestURL := ""
+	debugBanquet := false
 
 	var newArgs []string
 	newArgs = append(newArgs, os.Args[0])
@@ -83,6 +83,11 @@ func Flight() {
 			// Handle --http=...
 			if strings.HasPrefix(arg, "--http=") {
 				httpAddr = strings.TrimPrefix(arg, "--http=")
+			}
+			// Check for --debug-banquet
+			if arg == "--debug-banquet" {
+				debugBanquet = true
+				continue
 			}
 			continue
 		}
@@ -145,6 +150,11 @@ func Flight() {
 	}
 	log.Printf("Rclone manager initialized with cache dir: %s", cacheDir)
 
+	if debugBanquet {
+		banquet.SetVerbose(true)
+		log.Printf("Banquet verbose logging enabled")
+	}
+
 	// OnServe: Setup collections when server starts (database is ready by then)
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		// Ensure collections exist (database is ready now)
@@ -160,7 +170,7 @@ func Flight() {
 		}
 
 		// Configure centralized routing
-		ConfigureRouting(se.App)
+		ConfigureRouting(se)
 
 		return se.Next()
 	})

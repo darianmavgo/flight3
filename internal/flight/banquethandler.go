@@ -1,7 +1,6 @@
 package flight
 
 import (
-	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
@@ -39,7 +38,7 @@ func EnsureBanquetDataset(e *core.RequestEvent, reqURI string, verbose bool) (*b
 	// 1. Parse Banquet URL
 	reqURI = strings.TrimPrefix(reqURI, "/")
 
-	b, err := banquet.ParseNested(reqURI)
+	b, err := banquet.ParseBanquet(reqURI)
 	if err != nil {
 		if verbose {
 			log.Printf("[BANQUET] Invalid banquet URL: %s", reqURI)
@@ -184,17 +183,12 @@ func EnsureBanquetDataset(e *core.RequestEvent, reqURI string, verbose bool) (*b
 	return b, cachePath, nil
 }
 
-// EnsureLocalDataset processes local file requests and returns the cache path
-func EnsureLocalDataset(e *core.RequestEvent, b *banquet.Banquet, verbose bool) (string, error) {
-	if verbose {
-		log.Printf("[LOCAL] Handling local dataset: %s", b.DataSetPath)
-	}
-
-	// 1. Resolve local file path
-	baseDir := filepath.Join(e.App.DataDir(), "..", "pb_public") // Default
+// GetServeFolder returns the configured serve_folder from app_settings or default pb_public
+func GetServeFolder(app core.App) string {
+	baseDir := filepath.Join(app.DataDir(), "..", "pb_public") // Default
 
 	// Try to find serve_folder setting
-	if record, err := e.App.FindFirstRecordByData("app_settings", "key", "serve_folder"); err == nil && record != nil {
+	if record, err := app.FindFirstRecordByData("app_settings", "key", "serve_folder"); err == nil && record != nil {
 		if val := record.GetString("value"); val != "" {
 			if strings.HasPrefix(val, "~/") || val == "~" {
 				if homeDir, err := os.UserHomeDir(); err == nil {
@@ -209,14 +203,21 @@ func EnsureLocalDataset(e *core.RequestEvent, b *banquet.Banquet, verbose bool) 
 			if filepath.IsAbs(val) {
 				baseDir = val
 			} else {
-				baseDir = filepath.Join(e.App.DataDir(), "..", val)
-			}
-			if verbose {
-				log.Printf("[LOCAL] Using configured serve_folder: %s", baseDir)
+				baseDir = filepath.Join(app.DataDir(), "..", val)
 			}
 		}
 	}
+	return filepath.Clean(baseDir)
+}
 
+// EnsureLocalDataset processes local file requests and returns the cache path
+func EnsureLocalDataset(e *core.RequestEvent, b *banquet.Banquet, verbose bool) (string, error) {
+	if verbose {
+		log.Printf("[LOCAL] Handling local dataset: %s", b.DataSetPath)
+	}
+
+	// 1. Resolve local file path
+	baseDir := GetServeFolder(e.App)
 	var localFilePath string
 	if b.DataSetPath == "" || b.DataSetPath == "/" {
 		localFilePath = baseDir
@@ -351,141 +352,37 @@ func HandleBanquetDownload(e *core.RequestEvent) error {
 	return nil
 }
 
-// HandleBanquetSync returns JSON metadata about the dataset, useful for "Same Server" checks.
-func HandleBanquetSync(e *core.RequestEvent) error {
-	prefix := "/sqliter/sync/"
-	reqURI := e.Request.URL.Path
-	if !strings.HasPrefix(reqURI, prefix) {
-		return e.Error(400, "Invalid sync path", nil)
+// HandleBanquetDebug provides detailed information about a banquet URL for debugging
+func HandleBanquetDebug(e *core.RequestEvent) error {
+	rawURL := e.Request.URL.Query().Get("url")
+	if rawURL == "" {
+		return e.Error(400, "Missing url parameter", nil)
 	}
 
-	banquetPath := strings.TrimPrefix(reqURI, prefix)
-
-	// Delegate to Ensure logic
-	_, cachePath, err := EnsureBanquetDataset(e, banquetPath, false)
+	b, err := banquet.ParseNested(rawURL)
 	if err != nil {
-		return e.Error(500, "Failed to sync: "+err.Error(), nil)
+		return e.Error(400, "Failed to parse URL: "+err.Error(), nil)
 	}
 
-	// Construct JSON response
-	// Note: We need to know the download URL. It corresponds to the input path.
-	// We might need to encode it properly.
-	downloadURL := "/sqliter/file/" + banquetPath
+	user := ""
+	if b.User != nil {
+		user = b.User.Username()
+	}
 
-	return e.JSON(200, map[string]string{
-		"status":       "ready",
-		"server_path":  cachePath,
-		"download_url": downloadURL,
+	return e.JSON(200, map[string]interface{}{
+		"rawURL":      rawURL,
+		"scheme":      b.Scheme,
+		"user":        user,
+		"host":        b.Host,
+		"dataSetPath": b.DataSetPath,
+		"table":       b.Table,
+		"columnPath":  b.ColumnPath,
+		"select":      b.Select,
+		"where":       b.Where,
+		"orderBy":     b.OrderBy,
+		"limit":       b.Limit,
+		"offset":      b.Offset,
 	})
-}
-
-// isWritable checks if a directory is writable by attempting to create a temp file
-
-// QueryResult represents the JSON response for data rows
-type QueryResult struct {
-	Columns    []string                 `json:"columns"`
-	Rows       []map[string]interface{} `json:"rows"`
-	TotalCount int64                    `json:"totalCount"`
-}
-
-// HandleBanquetRows executes a query against the cached SQLite file and returns JSON rows.
-// Replacement for sqliter.Server.
-func HandleBanquetRows(e *core.RequestEvent) error {
-	pathParam := e.Request.URL.Query().Get("path")
-	if pathParam == "" {
-		return e.Error(400, "Missing path parameter", nil)
-	}
-
-	startStr := e.Request.URL.Query().Get("start")
-	endStr := e.Request.URL.Query().Get("end")
-
-	limit := 100
-	offset := 0
-
-	if startStr != "" {
-		fmt.Sscanf(startStr, "%d", &offset)
-	}
-	if endStr != "" {
-		var end int
-		fmt.Sscanf(endStr, "%d", &end)
-		if end > offset {
-			limit = end - offset
-		}
-	}
-
-	b, cachePath, err := EnsureBanquetDataset(e, pathParam, false)
-	if err != nil {
-		return e.Error(404, "Dataset not found: "+err.Error(), nil)
-	}
-
-	db, err := sql.Open("sqlite", cachePath)
-	if err != nil {
-		return e.Error(500, "Failed to open database: "+err.Error(), nil)
-	}
-	defer db.Close()
-
-	tableName := b.Table
-	if tableName == "" {
-		row := db.QueryRow("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' LIMIT 1")
-		if err := row.Scan(&tableName); err != nil {
-			return e.Error(404, "No tables found in database", nil)
-		}
-	}
-
-	var totalCount int64
-	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM \"%s\"", strings.ReplaceAll(tableName, "\"", "\"\""))
-	if err := db.QueryRow(countQuery).Scan(&totalCount); err != nil {
-		return e.Error(500, "Count query failed: "+err.Error(), nil)
-	}
-
-	query := fmt.Sprintf("SELECT * FROM \"%s\" LIMIT %d OFFSET %d", strings.ReplaceAll(tableName, "\"", "\"\""), limit, offset)
-	rows, err := db.Query(query)
-	if err != nil {
-		return e.Error(500, "Query failed: "+err.Error(), nil)
-	}
-	defer rows.Close()
-
-	columns, err := rows.Columns()
-	if err != nil {
-		return e.Error(500, "Failed to get columns: "+err.Error(), nil)
-	}
-
-	var resultRows []map[string]interface{}
-
-	for rows.Next() {
-		values := make([]interface{}, len(columns))
-		valuePtrs := make([]interface{}, len(columns))
-		for i := range values {
-			valuePtrs[i] = &values[i]
-		}
-
-		if err := rows.Scan(valuePtrs...); err != nil {
-			continue
-		}
-
-		rowMap := make(map[string]interface{})
-		for i, x := range values {
-			colName := columns[i]
-			if b, ok := x.([]byte); ok {
-				rowMap[colName] = string(b)
-			} else {
-				rowMap[colName] = x
-			}
-		}
-		resultRows = append(resultRows, rowMap)
-	}
-
-	if resultRows == nil {
-		resultRows = []map[string]interface{}{}
-	}
-
-	res := QueryResult{
-		Columns:    columns,
-		Rows:       resultRows,
-		TotalCount: totalCount,
-	}
-
-	return e.JSON(200, res)
 }
 
 // isWritable checks if a directory is writable by attempting to create a temp file

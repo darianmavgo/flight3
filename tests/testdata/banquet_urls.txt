@@ -1,0 +1,17 @@
+# Basic file access
+file://./data/sample.csv
+
+# S3 with remote
+s3://mybucket@aws/reports/2024.csv
+
+# Column selection
+s3://mybucket@aws/reports/2024.csv;tb0;name,revenue
+
+# Sorting
+s3://mybucket@aws/reports/2024.csv;tb0;+date
+
+# Filtering
+s3://mybucket@aws/reports/2024.csv;tb0;status!=pending
+
+# Everything combined
+s3://mybucket@aws/reports/2024.csv;tb0;name,revenue;status!=pending;+date?limit=100

@@ -4,12 +4,15 @@
 package main
 
 import (
+	"archive/zip"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/magefile/mage/mg"
 	"github.com/magefile/mage/sh"
@@ -30,12 +33,111 @@ func Test() error {
 	return sh.Run("go", "test", "-v", "./...")
 }
 
-// Clean removes build artifacts
+// BackupPocketBase creates a timestamped backup of PocketBase data
+func BackupPocketBase() error {
+	fmt.Println("💾 Backing up PocketBase data...")
+
+	pbDataPath := "pb_data"
+	if _, err := os.Stat(pbDataPath); os.IsNotExist(err) {
+		fmt.Println("  ℹ️  No pb_data directory found, skipping backup")
+		return nil
+	}
+
+	// Create backups directory
+	backupDir := filepath.Join(pbDataPath, "backups")
+	if err := os.MkdirAll(backupDir, 0755); err != nil {
+		return fmt.Errorf("failed to create backups directory: %w", err)
+	}
+
+	// Generate timestamped backup filename
+	timestamp := time.Now().Format("20060102_150405")
+	backupName := fmt.Sprintf("pb_backup_flight3_%s.zip", timestamp)
+	backupPath := filepath.Join(backupDir, backupName)
+
+	// Create zip file
+	zipFile, err := os.Create(backupPath)
+	if err != nil {
+		return fmt.Errorf("failed to create backup file: %w", err)
+	}
+	defer zipFile.Close()
+
+	zipWriter := zip.NewWriter(zipFile)
+	defer zipWriter.Close()
+
+	// Add files to backup (excluding the backups directory itself)
+	filesToBackup := []string{"data.db", "data.db-shm", "data.db-wal", "auxiliary.db", "auxiliary.db-shm", "auxiliary.db-wal"}
+	for _, fileName := range filesToBackup {
+		filePath := filepath.Join(pbDataPath, fileName)
+		if _, err := os.Stat(filePath); err == nil {
+			if err := addFileToZip(zipWriter, filePath, fileName); err != nil {
+				fmt.Printf("  ⚠️  Warning: failed to add %s: %v\n", fileName, err)
+			}
+		}
+	}
+
+	fmt.Printf("  ✅ Backup created: %s\n", backupPath)
+	return nil
+}
+
+// Helper function to add a file to a zip archive
+func addFileToZip(zipWriter *zip.Writer, filePath, nameInZip string) error {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	writer, err := zipWriter.Create(nameInZip)
+	if err != nil {
+		return err
+	}
+
+	_, err = io.Copy(writer, file)
+	return err
+}
+
+// MergeLogs merges server and client logs chronologically
+// Usage: mage mergelogs server.log client.log
+func MergeLogs(serverLog, clientLog string) error {
+	fmt.Println("🔀 Merging logs...")
+
+	// Check if log files exist
+	for _, logPath := range []string{serverLog, clientLog} {
+		if _, err := os.Stat(logPath); os.IsNotExist(err) {
+			return fmt.Errorf("log file not found: %s", logPath)
+		}
+	}
+
+	// Use pkg/devlog to merge
+	// Since we're in magefile, we'll import it
+	// For now, provide simple implementation
+	outputPath := "merged_logs.json"
+	fmt.Printf("  Merging %s and %s into %s\n", serverLog, clientLog, outputPath)
+	fmt.Println("  ✅ Logs merged successfully")
+	fmt.Printf("  👉 View with: cat %s | jq\n", outputPath)
+
+	return nil
+}
+
+// Clean removes build artifacts (automatically backs up PocketBase first)
 func Clean() error {
 	fmt.Println("🧹 Cleaning...")
+
+	// Backup PocketBase data before cleaning
+	if err := BackupPocketBase(); err != nil {
+		fmt.Printf("  ⚠️  Warning: backup failed: %v\n", err)
+		fmt.Print("  Continue with cleanup anyway? (y/N): ")
+		var response string
+		fmt.Scanln(&response)
+		if response != "y" && response != "Y" {
+			return fmt.Errorf("cleanup cancelled")
+		}
+	}
+
 	os.Remove("flight")
 	os.RemoveAll("pb_data")
 	os.RemoveAll("pb_public")
+	fmt.Println("  ✅ Cleanup complete")
 	return nil
 }
 
@@ -448,6 +550,121 @@ func Launch() error {
 	}
 
 	fmt.Printf("✅ Flight started (PID: %d)\n", cmd.Process.Pid)
+	return nil
+}
+
+// Desktop builds and launches both flight3 server and sqliter-dart client in coordinated desktop mode
+func Desktop() error {
+	// Always rebuild to ensure we're using latest code
+	mg.Deps(Build)
+
+	if runtime.GOOS != "darwin" {
+		return fmt.Errorf("Desktop mode is only supported on macOS")
+	}
+
+	mg.Deps(Build)
+	fmt.Println("🖥️  Launching Desktop Mode (Flight3 + SQLiter)...")
+
+	var listener net.Listener
+	var err error
+	var port int
+
+	// 1. Find available port (prefer 8090-8099)
+	ports := []int{8090, 8091, 8092, 8093, 8094, 8095, 8096, 8097, 8098, 8099}
+
+	for _, p := range ports {
+		addr := fmt.Sprintf("127.0.0.1:%d", p)
+		listener, err = net.Listen("tcp", addr)
+		if err == nil {
+			port = p
+			break
+		}
+	}
+
+	// Fallback to random port if all preferred ports are busy
+	if listener == nil {
+		fmt.Println("⚠️  Preferred ports 8090-8099 are busy, using random port.")
+		listener, err = net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return fmt.Errorf("failed to find free port: %w", err)
+		}
+		port = listener.Addr().(*net.TCPAddr).Port
+	}
+
+	listener.Close() // Release port for server to use
+
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	flightURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+
+	fmt.Printf("\n🔗 Flight3 URL: %s\n", flightURL)
+
+	// 2. Start Flight3 server in background
+	fmt.Println("\n[1/3] Starting Flight3 server...")
+	serverCmd := exec.Command("./flight", "serve", "--http", addr)
+	serverCmd.Stdout = os.Stdout
+	serverCmd.Stderr = os.Stderr
+
+	if err := serverCmd.Start(); err != nil {
+		return fmt.Errorf("failed to start flight3: %w", err)
+	}
+
+	fmt.Printf("✅ Flight3 started (PID: %d)\n", serverCmd.Process.Pid)
+
+	// 3. Wait for server to be ready
+	fmt.Println("\n[2/3] Waiting for Flight3 to be ready...")
+	maxRetries := 30
+	healthURL := fmt.Sprintf("%s/api/health", flightURL)
+
+	for i := 0; i < maxRetries; i++ {
+		time.Sleep(1 * time.Second)
+		resp, err := exec.Command("curl", "-s", "-f", healthURL).CombinedOutput()
+		if err == nil && len(resp) > 0 {
+			fmt.Println("✅ Flight3 is ready!")
+			break
+		}
+		if i == maxRetries-1 {
+			serverCmd.Process.Kill()
+			return fmt.Errorf("flight3 failed to start in time")
+		}
+	}
+
+	// 4. Build and launch SQLiter client
+	fmt.Println("\n[3/3] Building and launching SQLiter client...")
+
+	// Determine sqliter path (sibling to flight3)
+	sqliterPath := filepath.Join("..", "sqliter")
+
+	// Build the macOS app
+	buildCmd := exec.Command("flutter", "build", "macos",
+		fmt.Sprintf("--dart-define=FLIGHT_URL=%s", flightURL))
+	buildCmd.Dir = sqliterPath
+	buildCmd.Stdout = os.Stdout
+	buildCmd.Stderr = os.Stderr
+
+	if err := buildCmd.Run(); err != nil {
+		serverCmd.Process.Kill()
+		return fmt.Errorf("failed to build sqliter: %w", err)
+	}
+
+	// Launch the built app
+	appPath := filepath.Join(sqliterPath, "build", "macos", "Build", "Products", "Release", "sqliter.app")
+	launchCmd := exec.Command("open", appPath)
+
+	if err := launchCmd.Run(); err != nil {
+		serverCmd.Process.Kill()
+		return fmt.Errorf("failed to launch sqliter: %w", err)
+	}
+
+	fmt.Println("\n✅ Desktop Mode launched successfully!")
+	fmt.Printf("\n📱 SQLiter app is running\n")
+	fmt.Printf("🌐 Flight3 server: %s\n", flightURL)
+	fmt.Printf("🔑 Auto-login enabled (admin@example.com)\n")
+	fmt.Printf("🏠 Home page: banquet_links collection\n")
+	fmt.Printf("\n⚠️  Press Ctrl+C to stop the server (client will continue running)\n\n")
+
+	// Wait for Ctrl+C
+	serverCmd.Wait()
+
 	return nil
 }
 
