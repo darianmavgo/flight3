@@ -1,9 +1,15 @@
-2026/02/07 14:47:25 NOTICE: Using data directory: ./pb_data
-2026/02/07 14:47:25 NOTICE: [RCLONE] Initialized with cache directory: pb_data/cache
-2026/02/07 14:47:25 NOTICE: Rclone manager initialized with cache dir: pb_data/cache
-2026/02/07 14:47:25 NOTICE: PocketBase collections ensured
+2026/02/08 11:08:20 NOTICE: Using data directory: /Users/darianhickman/Library/Application Support/Flight3/pb_data
+2026/02/08 11:08:20 NOTICE: [RCLONE] Initialized with cache directory: /Users/darianhickman/Library/Application Support/Flight3/pb_data/cache
+2026/02/08 11:08:20 NOTICE: Rclone manager initialized with cache dir: /Users/darianhickman/Library/Application Support/Flight3/pb_data/cache
+2026/02/08 11:08:20 NOTICE: PocketBase collections ensured
 Ensured superuser admin@example.com password is correct
-2026/02/07 14:47:25 NOTICE: [FLIGHT] Routing configured: / -> /_/, /_/* (PB), /api/* (PB), /sqliter/* (API), /* (Scheme)
-2026/02/07 14:47:25 Server started at http://127.0.0.1:8095
+2026/02/08 11:08:20 NOTICE: [FLIGHT] Routing configured: / -> Banquet (serve_folder), /_/* (PB), /api/* (PB), /sqliter/* (API), /* (Scheme)
+2026/02/08 11:08:20 Server started at http://127.0.0.1:8095
 ├─ REST API:  http://127.0.0.1:8095/api/
 └─ Dashboard: http://127.0.0.1:8095/_/
+2026/02/08 11:08:21 NOTICE: [REQ] GET /api/health
+2026/02/08 11:08:21 NOTICE: [REQ] POST /api/collections/_superusers/auth-with-password
+2026/02/08 11:08:21 NOTICE: [REQ] GET /api/collections/banquet_links/records
+2026/02/08 11:08:56 NOTICE: [REQ] POST /api/collections/_superusers/auth-with-password
+2026/02/08 12:05:47 NOTICE: [REQ] GET /api/validate-path
+2026/02/08 12:05:49 NOTICE: [REQ] GET /api/validate-path

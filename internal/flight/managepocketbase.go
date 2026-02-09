@@ -23,7 +23,10 @@ func EnsureCollections(app core.App) error {
 	if err := EnsureAppSettings(app); err != nil {
 		return err
 	}
-	return EnsureBanquetLinks(app)
+	if err := EnsureBanquetLinks(app); err != nil {
+		return err
+	}
+	return EnsureRecentFiles(app)
 }
 
 func EnsureAppSettings(app core.App) error {
@@ -34,10 +37,26 @@ func EnsureAppSettings(app core.App) error {
 	}
 
 	collection := core.NewBaseCollection(name)
-	collection.Fields.Add(&core.TextField{Name: "key", Required: true})
 	collection.Fields.Add(&core.TextField{Name: "value", Required: true})
 	// Add unique constraint on key using an index? PocketBase handles unique constraints via indexes,
 	// but programmatic API for indexes is specific. For now, simple fields are fine.
+
+	// Make public
+	collection.ListRule = nil
+	collection.ViewRule = nil
+	collection.CreateRule = nil
+	collection.UpdateRule = nil
+	collection.DeleteRule = nil
+	// For public read/write, rules should be likely empty string "" or nil (nil means admin only usually in PB, empty string means public!)
+	// Wait, nil usually means Admin Only in PocketBase. "" (empty string) means Public.
+	// Let's check PB docs or existing code.
+	// Actually, looking at other PB examples: nil is Admin only. "" is Public.
+	public := ""
+	collection.ListRule = &public
+	collection.ViewRule = &public
+	collection.CreateRule = &public
+	collection.UpdateRule = &public
+	collection.DeleteRule = &public
 
 	return app.Save(collection)
 }
@@ -63,6 +82,54 @@ func EnsureBanquetLinks(app core.App) error {
 	collection.Fields.Add(&core.TextField{Name: "columnset"})
 	collection.Fields.Add(&core.TextField{Name: "query"})
 
+	// Make public
+	public := ""
+	collection.ListRule = &public
+	collection.ViewRule = &public
+	collection.CreateRule = &public
+	collection.UpdateRule = &public
+	collection.DeleteRule = &public
+
+	return app.Save(collection)
+}
+
+func EnsureRecentFiles(app core.App) error {
+	name := "recent_files"
+	existing, err := app.FindCollectionByNameOrId(name)
+	if err == nil && existing != nil {
+		return nil
+	}
+
+	superusers, err := app.FindCollectionByNameOrId(core.CollectionNameSuperusers)
+	if err != nil {
+		return fmt.Errorf("failed to find superusers collection: %w", err)
+	}
+
+	collection := core.NewBaseCollection(name)
+
+	// Relation to user
+	collection.Fields.Add(&core.RelationField{
+		Name:          "user",
+		CollectionId:  superusers.Id,
+		CascadeDelete: true, // Delete recent files when user is deleted
+		MaxSelect:     1,
+		Required:      true,
+	})
+
+	collection.Fields.Add(&core.TextField{Name: "path", Required: true})
+	collection.Fields.Add(&core.TextField{Name: "name", Required: true})
+	collection.Fields.Add(&core.DateField{Name: "last_opened", Required: true})
+	collection.Fields.Add(&core.BoolField{Name: "was_converted"})
+	collection.Fields.Add(&core.TextField{Name: "original_format"})
+
+	// Make public
+	public := ""
+	collection.ListRule = &public
+	collection.ViewRule = &public
+	collection.CreateRule = &public
+	collection.UpdateRule = &public
+	collection.DeleteRule = &public
+
 	return app.Save(collection)
 }
 
@@ -81,6 +148,14 @@ func EnsureRcloneRemotes(app core.App) error {
 	collection.Fields.Add(&core.BoolField{Name: "enabled", Required: true}) // Enable/disable remote
 	collection.Fields.Add(&core.TextField{Name: "description"})             // Documentation
 
+	// Make public
+	public := ""
+	collection.ListRule = &public
+	collection.ViewRule = &public
+	collection.CreateRule = &public
+	collection.UpdateRule = &public
+	collection.DeleteRule = &public
+
 	return app.Save(collection)
 }
 
@@ -95,6 +170,14 @@ func EnsureMksqliteConfigs(app core.App) error {
 	collection.Fields.Add(&core.TextField{Name: "name", Required: true})
 	collection.Fields.Add(&core.TextField{Name: "driver"}) // e.g. csv, json
 	collection.Fields.Add(&core.JSONField{Name: "args"})   // e.g. {"delimiter": ","}
+
+	// Make public
+	public := ""
+	collection.ListRule = &public
+	collection.ViewRule = &public
+	collection.CreateRule = &public
+	collection.UpdateRule = &public
+	collection.DeleteRule = &public
 
 	return app.Save(collection)
 }
@@ -138,6 +221,14 @@ func EnsureDataPipelines(app core.App) error {
 	})
 
 	collection.Fields.Add(&core.NumberField{Name: "cache_ttl"}) // in minutes
+
+	// Make public
+	public := ""
+	collection.ListRule = &public
+	collection.ViewRule = &public
+	collection.CreateRule = &public
+	collection.UpdateRule = &public
+	collection.DeleteRule = &public
 
 	return app.Save(collection)
 }

@@ -33,7 +33,8 @@ Open `http://127.0.0.1:8090/_/` in your browser to access the PocketBase admin d
 *   **Banquet URL Support**: Fully supports the Banquet URL notation for complex, nested data queries.
 *   **SQLiter API**: Internal REST API (`/sqliter/*`) for data querying compatible with SQLiter-Dart client.
 *   **Desktop Mode**: Coordinated launch of server and Flutter client for seamless local development.
-*   **Auto-Login**: Simplified authentication for local desktop usage.
+*   **Desktop Mode**: Coordinated launch of server and Flutter client for seamless local development.
+*   **No Authentication**: API and data access are public by default in Desktop mode.
 
 ## Area of Responsibility
 
@@ -134,7 +135,9 @@ Flight3 provides REST API endpoints for the SQLiter-Dart client:
 
 **Connection:**
 - Server: `http://127.0.0.1:8090`
-- Auto-login: `GET /api/auto_login`
+**Connection:**
+- Server: `http://127.0.0.1:8090`
+
 
 **Data API:**
 - File download: `GET /sqliter/file/{banquet-path}`

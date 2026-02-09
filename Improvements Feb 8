@@ -1,0 +1,6 @@
+Some of the UI Improvements I haven't seen in any other app, so message me if you don't understand:
+
+1) Make the flame emoji the home button. Remove the duplicate home icon.
+2) Make the banquet bar / parts doubleclickable. Make each part open the relevant query or folder browsing.
+3) Change the sort icon to + / - like in Banquet syntax sugar.  Don't color code.
+4) Change 404 behavior, for any given url color the path that actually exists. Query the banquet in reverse nested order.
