@@ -14,8 +14,15 @@ import (
 // returns a table listing of the files (buckets/objects) instead of an error.
 func TestBanquetDirectoryListing(t *testing.T) {
 	// 1. Setup Test Environment (Temp Dir & Files)
-	tmpDir := "../test_output/banquet_listing_test"
+	projectRoot, _ := os.Getwd()
+	// Navigate up if we are in tests subdir
+	for filepath.Base(projectRoot) != "flight3" && filepath.Base(projectRoot) != "/" {
+		projectRoot = filepath.Dir(projectRoot)
+	}
+	tmpDir := filepath.Join(projectRoot, "test_output", "banquet_listing_test")
+	// Soft delete
 	os.RemoveAll(tmpDir)
+	// defer os.RemoveAll(tmpDir) // Disabled as requested
 
 	pbPublicDir := filepath.Join(tmpDir, "pb_public")
 	pbDataDir := filepath.Join(tmpDir, "pb_data")
@@ -26,7 +33,6 @@ func TestBanquetDirectoryListing(t *testing.T) {
 	if err := os.MkdirAll(pbDataDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
 
 	// Create some dummy files in pb_public to "list"
 	os.WriteFile(filepath.Join(pbPublicDir, "file1.txt"), []byte("content1"), 0644)

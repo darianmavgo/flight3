@@ -3,6 +3,7 @@ package tests
 import (
 	"net/http"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/pocketbase/pocketbase"
@@ -11,9 +12,21 @@ import (
 
 func TestBanquetDirectR2(t *testing.T) {
 	// Use test_output/banquet_test_data instead of random temp dir
-	tmpDir := "../test_output/banquet_test_data"
-	os.MkdirAll(tmpDir, 0755)
-	defer os.RemoveAll(tmpDir)
+	projectRoot, _ := os.Getwd()
+	// Navigate up if we are in tests subdir
+	for filepath.Base(projectRoot) != "flight3" && filepath.Base(projectRoot) != "/" {
+		projectRoot = filepath.Dir(projectRoot)
+	}
+	tmpDir := filepath.Join(projectRoot, "test_output", "banquet_test_data")
+
+	// Soft delete
+	os.RemoveAll(tmpDir)
+
+	err := os.MkdirAll(tmpDir, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create output dir: %v", err)
+	}
+	// defer os.RemoveAll(tmpDir) // Disabled as requested
 
 	app := pocketbase.NewWithConfig(pocketbase.Config{
 		DefaultDataDir: tmpDir,

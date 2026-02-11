@@ -14,18 +14,28 @@ import (
 
 func TestRootPathServeFolder(t *testing.T) {
 	// Setup test directory
-	tempDir, err := os.MkdirTemp("", "flight3-test-*")
+	projectRoot, _ := os.Getwd()
+	// Navigate up if we are in tests subdir
+	for filepath.Base(projectRoot) != "flight3" && filepath.Base(projectRoot) != "/" {
+		projectRoot = filepath.Dir(projectRoot)
+	}
+	outputDir := filepath.Join(projectRoot, "test_output", "root_path_test")
+	_ = os.RemoveAll(outputDir) // Soft delete previous run
+	err := os.MkdirAll(outputDir, 0755)
 	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	// defer os.RemoveAll(outputDir) // Disabled as requested
+
+	tempDir := outputDir
 
 	// Create a dummy file in the serve folder
 	testFile := filepath.Join(tempDir, "test.csv")
 	err = os.WriteFile(testFile, []byte("a,b\n1,2"), 0644)
 	require.NoError(t, err)
 
-	pbDataDir, err := os.MkdirTemp("", "flight3-pb-*")
+	pbDataDir := filepath.Join(outputDir, "pb_data")
+	err = os.MkdirAll(pbDataDir, 0755)
 	require.NoError(t, err)
-	defer os.RemoveAll(pbDataDir)
+	// defer os.RemoveAll(pbDataDir)
 
 	testApp, err := tests.NewTestApp(pbDataDir)
 	require.NoError(t, err)

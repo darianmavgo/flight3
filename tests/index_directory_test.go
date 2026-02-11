@@ -15,9 +15,15 @@ import (
 // indexes a remote directory into a SQLite database with the standard tb0 schema.
 func TestIndexDirectoryRemote(t *testing.T) {
 	// 1. Setup Test Environment
-	testRoot := filepath.Join("..", "test_output", "index_directory_test")
+	projectRoot, _ := os.Getwd()
+	// Navigate up if we are in tests subdir
+	for filepath.Base(projectRoot) != "flight3" && filepath.Base(projectRoot) != "/" {
+		projectRoot = filepath.Dir(projectRoot)
+	}
+	testRoot := filepath.Join(projectRoot, "test_output", "index_directory_test")
+	// Soft delete
 	os.RemoveAll(testRoot)
-	defer os.RemoveAll(testRoot)
+	// defer os.RemoveAll(testRoot) // Disabled as requested
 
 	pbDataDir := filepath.Join(testRoot, "pb_data")
 	os.MkdirAll(pbDataDir, 0755)
@@ -171,9 +177,15 @@ func TestIndexDirectoryRemote(t *testing.T) {
 // by using the mksqlite filesystem converter directly
 func TestIndexDirectoryLocal(t *testing.T) {
 	// 1. Setup Test Environment
-	testRoot := filepath.Join("..", "test_output", "index_directory_local_test")
+	projectRoot, _ := os.Getwd()
+	// Navigate up if we are in tests subdir
+	for filepath.Base(projectRoot) != "flight3" && filepath.Base(projectRoot) != "/" {
+		projectRoot = filepath.Dir(projectRoot)
+	}
+	testRoot := filepath.Join(projectRoot, "test_output", "index_directory_local_test")
+	// Soft delete
 	os.RemoveAll(testRoot)
-	defer os.RemoveAll(testRoot)
+	// defer os.RemoveAll(testRoot) // Disabled as requested
 
 	pbPublicDir := filepath.Join(testRoot, "pb_public")
 	os.MkdirAll(pbPublicDir, 0755)

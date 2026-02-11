@@ -10,12 +10,21 @@ import (
 )
 
 func TestRclonePocketBaseIntegration(t *testing.T) {
-	// Create temporary directory for test
-	tempDir, err := os.MkdirTemp("", "flight3_test_*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
+	// Create persistent test output directory
+	projectRoot, _ := os.Getwd()
+	// Navigate up if we are in tests subdir
+	for filepath.Base(projectRoot) != "flight3" && filepath.Base(projectRoot) != "/" {
+		projectRoot = filepath.Dir(projectRoot)
 	}
-	defer os.RemoveAll(tempDir)
+	outputDir := filepath.Join(projectRoot, "test_output", "rclone_integration")
+	_ = os.RemoveAll(outputDir) // Soft delete previous run
+	err := os.MkdirAll(outputDir, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create output dir: %v", err)
+	}
+	// defer os.RemoveAll(outputDir) // Disabled as requested
+
+	tempDir := outputDir
 
 	// Initialize PocketBase with temp directory pointing to pb_data
 	pbDataDir := filepath.Join(tempDir, "pb_data")
@@ -49,12 +58,21 @@ func TestCacheKeyGeneration(t *testing.T) {
 }
 
 func TestCacheValidation(t *testing.T) {
-	// Create a temporary cache file
-	tempDir, err := os.MkdirTemp("", "cache_test_*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
+	// Create persistent test output directory
+	projectRoot, _ := os.Getwd()
+	// Navigate up if we are in tests subdir
+	for filepath.Base(projectRoot) != "flight3" && filepath.Base(projectRoot) != "/" {
+		projectRoot = filepath.Dir(projectRoot)
 	}
-	defer os.RemoveAll(tempDir)
+	outputDir := filepath.Join(projectRoot, "test_output", "cache_validation") // unique subdir
+	_ = os.RemoveAll(outputDir)                                                // Soft delete previous run
+	err := os.MkdirAll(outputDir, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create output dir: %v", err)
+	}
+	// defer os.RemoveAll(outputDir) // Disabled as requested
+
+	tempDir := outputDir
 
 	cachePath := filepath.Join(tempDir, "test.db")
 
