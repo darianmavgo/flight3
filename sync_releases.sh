@@ -4,7 +4,7 @@
 REPOS=("banquet" "mksqlite" "sqliter" "TableTypeMaster")
 # BASE_DIR should be the directory containing all the repos
 # Script is in REPO/scripts/, so "$(dirname "$0")/../.." is the directory above REPO.
-BASE_DIR=/Users/darianhickman/Documents/
+BASE_DIR=/Users/darianhickman/Documents/flight-buddies
 
 echo "🚀 Starting release synchronization..."
 
